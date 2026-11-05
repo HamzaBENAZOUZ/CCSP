@@ -1,7 +1,7 @@
 import { SupabaseStore, LocalStore, latestByQuestion } from "./store.js";
 import { t, getLang, setLang, locale } from "./i18n.js";
 import { offlineEnabled, registerSW, unregisterSW, autonomous, setAutonomous } from "./offline.js";
-const REVISION = [];  // fiches de révision : site CISSP uniquement
+import { REVISION } from "./revision.js";   // fiches « Révision CCSP » (chapitres 201-210)
 
 /** Vrai dans l'application Android (pont vocal AndroidTTS fourni par l'APK). */
 const IN_APP = !!window.AndroidTTS;
@@ -11,7 +11,7 @@ const PASS = CFG.PASS_MARK || 70;
 const DOMAIN_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
 /* Site CCSP : banques Study Guide (chapitres 201-210) et Practice Tests (301-308), dans la même base
    Supabase que le site CISSP. Les chapitres CISSP (1-112, 401-408) ne sont pas chargés. */
-const SECTIONS = ["ccsp-guide", "ccsp-practice"];
+const SECTIONS = ["ccsp-guide", "ccsp-practice", "revision"];
 const DEF_SEC = "ccsp-guide";
 /** Chapitres de ce site. */
 const isOwnChapter = id => id > 200 && id < 400;
@@ -180,8 +180,8 @@ const certOf = sec => (String(sec).startsWith("ccsp") ? "ccsp" : "cissp");
 const secCert = () => certOf(state.section);
 const secChapters = () => state.chapters.filter(c => secOf(c.id) === state.section);
 const secQuestions = () => state.questions.filter(q => secOf(q.chapter_id) === state.section);
-// « revision » : fiches de révision (js/revision.js), sans questions ; visible dès que le CISSP est chargé.
-const hasSection = sec => sec === "revision" ? state.chapters.some(c => c.id <= 100) : state.chapters.some(c => secOf(c.id) === sec);
+// « revision » : fiches « Révision CCSP » (js/revision.js), sans questions ; visible dès que le Study Guide CCSP est chargé.
+const hasSection = sec => sec === "revision" ? state.chapters.some(c => c.id > 200 && c.id < 300) : state.chapters.some(c => secOf(c.id) === sec);
 const hasCcsp = () => hasSection("ccsp-guide") || hasSection("ccsp-practice");
 /** Nom d'un domaine, selon la certification (8 domaines CISSP, 6 domaines CCSP). */
 const domainName = (d, cert = secCert()) => t((cert === "ccsp" ? "ccspDomain." : "domain.") + d);
@@ -556,12 +556,11 @@ function savedPanel() {
     }).join("")}</ul></section>`;
 }
 
-/** Une seule rangée d'onglets : CISSP / CISSP Practice / CISSP Last Mile / Révision CISSP / CCSP / CCSP Practice
+/** Une seule rangée d'onglets : CCSP Study Guide / CCSP Practice / Révision CCSP
  *  (seulement ceux qui ont du contenu). Le chiffre est le nombre de questions (de fiches pour la révision). */
 function secTabs(sec) {
   const nIn = s => s === "revision" ? REVISION.length : state.questions.filter(q => secOf(q.chapter_id) === s).length;
-  const SEC_NAMES = { guide: "CISSP", practice: "CISSP Practice", lastmile: "CISSP Last Mile", revision: t("rev.tab"),
-    "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice" };
+  const SEC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice", revision: t("rev.tab") };
   const secs = Object.keys(SEC_NAMES).filter(hasSection);
   return secs.length > 1 ? `
     <div class="seg sec-tabs" role="group" aria-label="${esc(t("sec.label"))}">
@@ -570,14 +569,14 @@ function secTabs(sec) {
     </div>` : "";
 }
 
-/* ---- Onglet « Révision CISSP » : une fiche par chapitre du Study Guide (résumé, préparer l'examen, à mémoriser),
+/* ---- Onglet « Révision CCSP » : une fiche par chapitre du Study Guide (résumé, préparer l'examen, à mémoriser),
    avec « Listen » (lecture en anglais) et, quand le site est en français, « Lire » (lecture en français). */
 const REV_PANES = ["sum", "tips", "mem"];
 const revOpen = new Map();   // chapitre -> volet affiché
 function revSpeech(r, pane, lang) {
   const c = chById(r.id), title = c ? (lang === "fr" && c.title_fr ? c.title_fr : c.title) : "";
   const head = t("rev.pane." + pane, {}, lang);
-  return joinSpeech([(lang === "fr" ? "Chapitre " : "Chapter ") + r.id, title, head, ...(pane === "sum" ? r.sum[lang].map(l => l.replace(/^(## |- )/, "")) : r[pane][lang])]);
+  return joinSpeech([(lang === "fr" ? "Chapitre " : "Chapter ") + (r.id - 200), title, head, ...(pane === "sum" ? r.sum[lang].map(l => l.replace(/^(## |- )/, "")) : r[pane][lang])]);
 }
 function revPaneHtml(r, pane, lang) {
   if (pane === "sum") {
@@ -615,16 +614,16 @@ function renderRevision() {
       </div>
     </details>`;
   };
-  const blocks = DOMAIN_IDS.map(d => {
+  const blocks = [1, 2, 3, 4, 5, 6].map(d => {   // 6 domaines CCSP
     const rs = REVISION.filter(r => (chById(r.id) || {}).domain === d);
     if (!rs.length) return "";
-    return `<section class="domain"><div class="domain-head"><h2><span class="mono accent">D${d}</span> ${esc(domainName(d, "cissp"))}</h2></div>
+    return `<section class="domain"><div class="domain-head"><h2><span class="mono accent">D${d}</span> ${esc(domainName(d, "ccsp"))}</h2></div>
       <div class="rev-grid">${rs.map(card).join("")}</div></section>`;
   }).join("");
   app.innerHTML = `
   <section class="hero">
-    <p class="mono kicker">&gt; root@cissp:~$ ./review --lang=${lang}</p>
-    <h1 class="glitch" data-text="CISSP REVIEW">CISSP REVIEW</h1>
+    <p class="mono kicker">&gt; root@ccsp:~$ ./review --lang=${lang}</p>
+    <h1 class="glitch" data-text="CCSP REVIEW">CCSP REVIEW</h1>
     ${secTabs(sec)}
     <p class="muted">${esc(t("rev.sub", { n: REVISION.length }))}</p>
     <div class="row"><button class="btn btn-ghost btn-sm" id="rev-open-all">${esc(t("rev.openAll"))}</button>
