@@ -1,0 +1,6 @@
+# Contenu sous copyright (CCSP Official Study Guide / Practice Tests) : ne jamais publier
+private/
+# Configuration locale (pas de secret, mais propre à chaque déploiement)
+.DS_Store
+Thumbs.db
+__pycache__/
