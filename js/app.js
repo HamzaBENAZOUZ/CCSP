@@ -301,7 +301,8 @@ async function start() {
   state.view = "boot";
   app.innerHTML = `<div class="boot"><p class="mono">&gt; ${esc(t("boot.load"))}<span class="cursor">_</span></p></div>`;
   try {
-    const { chapters, questions } = await state.store.loadContent();
+    const { chapters, questions, notes } = await state.store.loadContent();
+    state.notes = new Map((notes || []).map(n => [n.chapter_id, n]));
     state.chapters = chapters.filter(c => isOwnChapter(c.id));
     state.questions = questions.filter(q => isOwnChapter(q.chapter_id));
     state.byId = new Map(questions.map(q => [q.id, q]));
@@ -571,19 +572,27 @@ function secTabs(sec) {
 
 /* ---- Onglet « Révision CCSP » : une fiche par chapitre du Study Guide (résumé, préparer l'examen, à mémoriser),
    avec « Listen » (lecture en anglais) et, quand le site est en français, « Lire » (lecture en français). */
-const REV_PANES = ["sum", "tips", "mem"];
+const REV_PANES = ["sum", "book", "tips", "mem"];
+/** Volet « Livre » : Summary + Exam Essentials du Study Guide (texte exact en anglais, table ccsp_book_notes). */
+function revBook(r, lang) {
+  const n = state.notes && state.notes.get(r.id);
+  if (!n) return null;
+  const pick = (en, fr) => (lang === "fr" && fr && fr.length ? fr : en) || [];
+  return ["## Summary", ...pick(n.summary, n.summary_fr), "## Exam Essentials", ...pick(n.essentials, n.essentials_fr)];
+}
+const revLines = (r, pane, lang) => pane === "sum" ? r.sum[lang] : pane === "book" ? (revBook(r, lang) || [t("rev.bookNone")]) : r[pane][lang];
 const revOpen = new Map();   // chapitre -> volet affiché
 function revSpeech(r, pane, lang) {
   const c = chById(r.id), title = c ? (lang === "fr" && c.title_fr ? c.title_fr : c.title) : "";
   const head = t("rev.pane." + pane, {}, lang);
-  return joinSpeech([(lang === "fr" ? "Chapitre " : "Chapter ") + (r.id - 200), title, head, ...(pane === "sum" ? r.sum[lang].map(l => l.replace(/^(## |- )/, "")) : r[pane][lang])]);
+  return joinSpeech([(lang === "fr" ? "Chapitre " : "Chapter ") + (r.id - 200), title, head, ...revLines(r, pane, lang).map(l => l.replace(/^(## |- )/, ""))]);
 }
 function revPaneHtml(r, pane, lang) {
-  if (pane === "sum") {
+  if (pane === "sum" || pane === "book") {
     // Lignes « ## » = sous-titre, « - » = puce (regroupées en liste), sinon paragraphe.
     let html = "", list = [];
     const flush = () => { if (list.length) { html += `<ul class="rev-list">${list.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`; list = []; } };
-    for (const l of r.sum[lang]) {
+    for (const l of revLines(r, pane, lang)) {
       if (l.startsWith("- ")) { list.push(l.slice(2)); continue; }
       flush();
       html += l.startsWith("## ") ? `<h4>${esc(l.slice(3))}</h4>` : `<p>${esc(l)}</p>`;
