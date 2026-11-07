@@ -1,7 +1,7 @@
 {
- "versionCode": 24,
- "versionName": "3.3",
+ "versionCode": 25,
+ "versionName": "3.4",
  "apk": "ccsp-training.apk",
- "notes_fr": "Onglet « Axes d'amélioration » déplacé à la fin",
- "notes": "\"Improvement areas\" tab moved to the end"
+ "notes_fr": "Le bouton « Mettre à jour » vérifie aussi s'il y a une nouvelle version de l'appli",
+ "notes": "The \"Update\" button also checks for a new app version"
 }
