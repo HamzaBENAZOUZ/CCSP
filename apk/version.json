@@ -1,7 +1,7 @@
 {
- "versionCode": 21,
- "versionName": "3.0",
+ "versionCode": 22,
+ "versionName": "3.1",
  "apk": "ccsp-training.apk",
- "notes_fr": "Numéro de version affiché en haut",
- "notes": "Version number shown at the top"
+ "notes_fr": "Nouvel onglet « Axes d'amélioration » : tes erreurs par domaine, avec les passages des fiches à relire",
+ "notes": "New \"Improvement areas\" tab: your mistakes by domain, with the study sheet passages to read again"
 }

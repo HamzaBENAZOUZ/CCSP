@@ -11,7 +11,7 @@ const PASS = CFG.PASS_MARK || 70;
 const DOMAIN_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
 /* Site CCSP : banques Study Guide (chapitres 201-210) et Practice Tests (301-308), dans la même base
    Supabase que le site CISSP. Les chapitres CISSP (1-112, 401-408) ne sont pas chargés. */
-const SECTIONS = ["ccsp-guide", "ccsp-practice", "revision"];
+const SECTIONS = ["ccsp-guide", "ccsp-practice", "improve", "revision"];
 const DEF_SEC = "ccsp-guide";
 /** Chapitres de ce site. */
 const isOwnChapter = id => id > 200 && id < 400;
@@ -442,7 +442,7 @@ const secCert = () => certOf(state.section);
 const secChapters = () => state.chapters.filter(c => secOf(c.id) === state.section);
 const secQuestions = () => state.questions.filter(q => secOf(q.chapter_id) === state.section);
 // « revision » : fiches « Révision CCSP » (js/revision.js), sans questions ; visible dès que le Study Guide CCSP est chargé.
-const hasSection = sec => sec === "revision" ? state.chapters.some(c => c.id > 200 && c.id < 300) : state.chapters.some(c => secOf(c.id) === sec);
+const hasSection = sec => sec === "improve" ? state.questions.length > 0 : sec === "revision" ? state.chapters.some(c => c.id > 200 && c.id < 300) : state.chapters.some(c => secOf(c.id) === sec);
 const hasCcsp = () => hasSection("ccsp-guide") || hasSection("ccsp-practice");
 /** Nom d'un domaine, selon la certification (8 domaines CISSP, 6 domaines CCSP). */
 const domainName = (d, cert = secCert()) => t((cert === "ccsp" ? "ccspDomain." : "domain.") + d);
@@ -485,7 +485,7 @@ function errorPanel(title, msg, hint) {
 }
 
 // Numéro de version affiché discrètement à côté du logo (même numéro que l'APK : à changer à chaque version).
-const APP_VERSION = "3.0";
+const APP_VERSION = "3.1";
 function renderVersion() {
   if (document.getElementById("app-ver")) return;
   const brand = document.querySelector(".brand"); if (!brand) return;
@@ -940,14 +940,146 @@ function savedPanel() {
 /** Une seule rangée d'onglets : CCSP Study Guide / CCSP Practice / Révision CCSP
  *  (seulement ceux qui ont du contenu). Le chiffre est le nombre de questions (de fiches pour la révision). */
 function secTabs(sec) {
-  const nIn = s => s === "revision" ? REVISION.length : state.questions.filter(q => secOf(q.chapter_id) === s).length;
-  const SEC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice", revision: t("rev.tab") };
+  const nIn = s => s === "improve" ? mistakes().length : s === "revision" ? REVISION.length : state.questions.filter(q => secOf(q.chapter_id) === s).length;
+  const SEC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice", improve: getLang() === "fr" ? "Axes d\'amélioration" : "Improvement areas", revision: t("rev.tab") };
   const secs = Object.keys(SEC_NAMES).filter(hasSection);
   return secs.length > 1 ? `
     <div class="seg sec-tabs" role="group" aria-label="${esc(t("sec.label"))}">
       ${secs.map(k => `<button class="seg-btn" data-section="${k}" aria-pressed="${k === sec}">${esc(SEC_NAMES[k])}
         <small class="mono">${nIn(k)}</small></button>`).join("")}
     </div>` : "";
+}
+
+/* ---- Onglet « Axes d'amélioration » : alimenté par les mauvaises réponses (dernière réponse fausse à une question),
+   regroupé par domaine. Pour chaque erreur : la bonne réponse, l'explication et les passages des fiches de révision
+   qui en parlent (rapprochement par mots-clés, sans IA), plus les chapitres à relire en priorité. */
+const IMP_STOP = new Set(("the that which with from this what following would best most should must into their they there these those when where while about "
+  + "after before other than then have will your also each such only more less does were been being could which whose them some many much very same within "
+  + "between because under over upon used using uses what dans pour avec plus mais elle ils leur sont cette sont être fait").split(" "));
+const impToks = s => (String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").match(/[a-z0-9]{4,}/g) || []).filter(w => !IMP_STOP.has(w));
+let impIdx = null;
+/** Index des lignes des fiches (texte anglais) : { lines: [{ ch, pane, i, set }], df, N }. */
+function impIndex() {
+  if (impIdx) return impIdx;
+  const lines = [], df = new Map();
+  for (const r of REVISION) for (const pane of ["mem", "tips", "sum"]) {
+    (pane === "sum" ? r.sum.en : r[pane].en).forEach((l, i) => {
+      if (l.startsWith("## ")) return;
+      const set = new Set(impToks(l)); if (set.size < 3) return;
+      lines.push({ ch: r.id, pane, i, set }); set.forEach(w => df.set(w, (df.get(w) || 0) + 1));
+    });
+  }
+  return (impIdx = { lines, df, N: lines.length || 1 });
+}
+const impLineText = (x, lang) => {
+  const r = REVISION.find(y => y.id === x.ch); if (!r) return "";
+  const arr = x.pane === "sum" ? r.sum : r[x.pane];
+  return String((arr[lang] && arr[lang][x.i]) || arr.en[x.i] || "").replace(/^- /, "");
+};
+/** Les passages des fiches les plus proches d'une question (et la question elle-même, pour le domaine). */
+const impCache = new Map();
+function impExtracts(q, k = 2) {
+  if (impCache.has(q.id)) return impCache.get(q.id);
+  const { lines, df, N } = impIndex();
+  const correct = (q.correct || []).map(L => (q.options || [])[L.charCodeAt(0) - 65]);
+  const qs = new Set(impToks([q.scenario, q.question, ...correct, q.explanation].join(" ")));
+  const own = REVISION.some(r => r.id === q.chapter_id) ? q.chapter_id : null;          // question du Study Guide : sa fiche
+  const dom = (chById(q.chapter_id) || {}).domain || null;
+  const inDom = id => !dom || (chById(id) || {}).domain === dom;
+  const scored = [];
+  for (const x of lines) {
+    if (own ? x.ch !== own : !inDom(x.ch)) continue;
+    let s = 0; x.set.forEach(w => { if (qs.has(w)) s += Math.log(N / df.get(w)); });
+    if (s > 0) scored.push([s / Math.sqrt(x.set.size), x]);
+  }
+  scored.sort((a, b) => b[0] - a[0]);
+  const best = scored.filter(([s]) => s >= 1.2).slice(0, k).map(([, x]) => x);
+  if (!best.length && scored.length) best.push(scored[0][1]);
+  const res = { best, domain: dom || (best[0] ? (chById(best[0].ch) || {}).domain : null) };
+  impCache.set(q.id, res);
+  return res;
+}
+const IMP_CERT = "ccsp";
+const IMP_PANE = { mem: { fr: "À mémoriser", en: "To memorize" }, tips: { fr: "Préparer l'examen", en: "Exam prep" }, sum: { fr: "Résumé", en: "Summary" } };
+let impDom = null;   // domaine affiché dans l'onglet
+function renderImprove() {
+  const lang = getLang(), fr = lang === "fr";
+  const wrong = mistakes();
+  const answered = state.questions.filter(q => state.latest.has(q.id));
+  const byDom = new Map();
+  for (const q of wrong) {
+    const d = impExtracts(q).domain || 0;
+    if (!byDom.has(d)) byDom.set(d, []); byDom.get(d).push(q);
+  }
+  const doms = [...byDom.keys()].sort((a, b) => byDom.get(b).length - byDom.get(a).length || a - b);
+  const rate = d => {
+    const qs = answered.filter(q => (impExtracts(q).domain || 0) === d);
+    return qs.length ? pct(qs.filter(q => state.latest.get(q.id).is_correct).length, qs.length) : null;
+  };
+  const qCard = q => {
+    const tx = qText(q, lang), ex = impExtracts(q);
+    const corr = (q.correct || []).map(L => `<li><b>${esc(L)}</b> ${esc((tx.options || [])[L.charCodeAt(0) - 65] || "")}</li>`).join("");
+    const reads = ex.best.map(x => {
+      const c = chById(x.ch);
+      return `<li><button class="imp-ch mono" data-imp-rev="${x.ch}" data-imp-pane="${x.pane}" title="${esc(fr ? "Ouvrir la fiche de révision" : "Open the study sheet")}">${esc(chLabel(x.ch))}</button>
+        <span class="muted small">${esc(chTitle(c))} · ${esc(IMP_PANE[x.pane][lang])}</span><br>${esc(impLineText(x, lang))}</li>`;
+    }).join("");
+    return `<details class="imp-q">
+      <summary><span class="mono muted small">${esc(chLabel(q.chapter_id))}</span> ${esc(String(tx.question).slice(0, 160))}${String(tx.question).length > 160 ? "…" : ""}</summary>
+      <div class="imp-body">
+        ${tx.scenario ? `<p class="muted">${esc(tx.scenario)}</p>` : ""}
+        <p class="imp-qtext">${esc(tx.question)}</p>
+        <p class="imp-lbl ok">✓ ${esc(fr ? ((q.correct || []).length > 1 ? "Bonnes réponses" : "Bonne réponse") : "Correct answer")}</p>
+        <ul class="imp-correct">${corr}</ul>
+        ${tx.explanation ? `<p class="imp-lbl">💡 ${fr ? "Pourquoi" : "Why"}</p><p class="imp-exp">${esc(tx.explanation)}</p>` : ""}
+        ${reads ? `<p class="imp-lbl">📖 ${fr ? "À relire dans les fiches" : "Read again in the study sheets"}</p><ul class="imp-reads">${reads}</ul>` : ""}
+      </div>
+    </details>`;
+  };
+  if (!byDom.has(impDom)) impDom = doms[0];
+  const domName = d => d ? domainName(d, IMP_CERT) : (fr ? "Autres questions" : "Other questions");
+  const nav = doms.map(d => `<button class="imp-tab" data-imp-dom="${d}" aria-selected="${d === impDom}" role="tab">
+      <span class="mono accent">${d ? "D" + d : "?"}</span><span class="imp-tab-name">${esc(domName(d))}</span><span class="imp-tab-n">${byDom.get(d).length}</span></button>`).join("");
+  const pane = d => {
+    const qs = byDom.get(d), r = rate(d);
+    const chs = new Map();
+    qs.forEach(q => impExtracts(q).best.slice(0, 1).forEach(x => chs.set(x.ch, (chs.get(x.ch) || 0) + 1)));
+    const top = [...chs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    return `<div class="domain-head"><h2><span class="mono accent">${d ? "D" + d : "?"}</span> ${esc(domName(d))}</h2>
+        <button class="btn btn-ghost btn-sm" data-imp-quiz="${d}">${esc(fr ? `Refaire ces ${qs.length} questions` : `Retry these ${qs.length} questions`)}</button></div>
+      <p class="imp-stats"><span class="imp-err">${qs.length} ${fr ? (qs.length > 1 ? "erreurs" : "erreur") : (qs.length > 1 ? "mistakes" : "mistake")}</span>
+        ${r !== null ? `<span class="muted">· ${r} % ${fr ? "de réussite sur ce domaine" : "success on this domain"}</span>` : ""}</p>
+      ${top.length ? `<div class="imp-prio"><span class="muted small">${fr ? "Chapitres à relire en priorité :" : "Chapters to read again first:"}</span>
+        ${top.map(([ch, n]) => `<button class="imp-ch mono" data-imp-rev="${ch}" data-imp-pane="mem">${esc(chLabel(ch))} · ${esc(chTitle(chById(ch)))} <b>${n}</b></button>`).join("")}</div>` : ""}
+      <div class="imp-list">${qs.map(qCard).join("")}</div>`;
+  };
+  const blocks = doms.length ? `<div class="imp-layout"><nav class="imp-nav" role="tablist" aria-label="${fr ? "Domaines" : "Domains"}">${nav}</nav>
+    <section class="imp-pane" role="tabpanel">${pane(impDom)}</section></div>` : "";
+  app.innerHTML = `
+  <div id="offline-slot"></div>
+  <section class="hero">
+    <h1>${fr ? "Axes d'amélioration" : "Improvement areas"}</h1>
+    ${secTabs("improve")}
+    <p class="muted">${esc(fr
+      ? `Tes ${wrong.length} questions ratées (dernière réponse fausse), regroupées par domaine, du plus faible au plus solide. Pour chacune : la bonne réponse, l'explication et les passages des fiches de révision à relire. Une question réussie plus tard disparaît d'ici.`
+      : `Your ${wrong.length} missed questions (last answer wrong), grouped by domain, weakest first. For each one: the correct answer, the explanation and the study sheet passages to read again. A question you later get right disappears from here.`)}</p>
+  </section>
+  ${blocks || `<section class="panel"><p>${fr ? "Aucune erreur pour l'instant : fais quelques QCM, tes axes d'amélioration apparaîtront ici." : "No mistakes yet: take a few quizzes and your improvement areas will show up here."}</p></section>`}`;
+  app.querySelectorAll("[data-section]").forEach(b => b.onclick = () => { stopSpeak(); setSection(b.dataset.section); });
+  app.querySelectorAll("[data-imp-dom]").forEach(b => b.onclick = () => { impDom = +b.dataset.impDom; renderImprove(); });
+  app.querySelectorAll("[data-imp-quiz]").forEach(b => b.onclick = () => {
+    const d = +b.dataset.impQuiz, qs = byDom.get(d) || [];
+    startQuiz({ mode: "mistakes", chapter_id: null, lab: { k: "mistakesDom", d, c: IMP_CERT }, questions: shuffle(qs), feedback: true });
+  });
+  app.querySelectorAll("[data-imp-rev]").forEach(b => b.onclick = e => {
+    e.preventDefault(); e.stopPropagation();
+    const id = +b.dataset.impRev;
+    revOpen.set("revision:" + id, b.dataset.impPane || "mem");
+    setSection("revision");
+    const card = app.querySelector(`.rev-card[data-rev="${id}"]`);
+    if (card) { card.open = true; card.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  });
+  mountOffline();
 }
 
 /* ---- Onglet « Révision CCSP » : une fiche par chapitre du Study Guide (résumé, préparer l'examen, à mémoriser),
@@ -1057,6 +1189,7 @@ function renderHome() {
   stopTimer();
   state.view = "home";
   if (!hasSection(state.section)) state.section = hasSection(DEF_SEC) ? DEF_SEC : "ccsp-practice";
+  if (state.section === "improve") { renderImprove(); return; }
   if (state.section === "revision") { renderRevision(); return; }
   const sec = state.section, cert = certOf(sec), CERT = cert.toUpperCase();
   const kind = sec.endsWith("practice") ? "practice" : "guide";
@@ -1211,6 +1344,7 @@ function labelOf(lab) {
     case "mistakesCh": return t("mode.mistakesCh", { n: chLabel(lab.id) });
     case "domain": return (lab.c === "ccsp" ? "CCSP · " : "") + t("mode.domain", { d: lab.d, name: domainName(lab.d, lab.c || "cissp") });
     case "exam": return (lab.c === "ccsp" ? "CCSP · " : "") + t("mode.exam", { n: lab.n });
+    case "mistakesDom": return t("mode.mistakesCh", { n: (lab.c === "ccsp" ? "CCSP " : "") + "D" + lab.d });
     case "mistakes": return t("mode.mistakes");
     case "flagged": return t("mode.flagged");
     case "errorsOf": return t("mode.errorsOf", { label: labelOf(lab.of) });
