@@ -186,7 +186,7 @@ const DICT = {
     "domain.8": "Sécurité du développement logiciel",
     "sec.cert": "Choix de la certification",
     "rev.tab": "Révision CCSP",
-    "rev.sub": "{n} fiches, une par chapitre du Study Guide : un résumé complet, comment se préparer à l'examen et les points à mémoriser. « Listen » lit la fiche en anglais, « Lire » en français.",
+    "rev.sub": "{n} fiches, une par chapitre du Study Guide : un résumé complet, comment se préparer à l'examen et les points à mémoriser. « Lire » lit la fiche à voix haute. Pour l'écouter en anglais, passe le site en EN.",
     "rev.openAll": "Tout déplier",
     "rev.closeAll": "Tout replier",
     "rev.pane.sum": "Résumé",
