@@ -1,7 +1,7 @@
 {
- "versionCode": 20,
- "versionName": "2.9",
+ "versionCode": 21,
+ "versionName": "3.0",
  "apk": "ccsp-training.apk",
- "notes_fr": "Mise à jour directe depuis l'appli, lecture auto de la correction, bouton son",
- "notes": "In-app updates, automatic reading of the explanation, sound button"
+ "notes_fr": "Numéro de version affiché en haut",
+ "notes": "Version number shown at the top"
 }
