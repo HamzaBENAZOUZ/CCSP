@@ -537,3 +537,35 @@ th { color: var(--muted); }
 .opt.selected.wrong, .opt.wrong { border-color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
 .opt.wrong .opt-key { background: var(--red); border: 0; }
 .q-chapter { font-family: var(--sans); }
+
+/* ======================================================================
+   Charte CCSP (2026-11-07) : couleurs du logo ISC2 CCSP
+   bleu-vert clair #8CC4C4, bleu #1A7DB0, noir. Même structure qu'Aurore.
+   ====================================================================== */
+:root {
+  --bg: #0a1015; --panel-solid: #111b22;
+  --text: #ebf3f6; --muted: #9bb0ba;
+  --green: #4cc38a; --green-dim: #3aa774; --cyan: #8cc4c4; --red: #ef6461;
+  --acc: #8cc4c4; --acc-soft: rgba(140,196,196,.14); --acc-fg: #bfe0e0;
+  --grad: linear-gradient(135deg, #4f9a9b, #1a7db0);
+  --on-green: #04140d; --green-hover: #6fd6a3;
+  --topbar: rgba(10,16,21,.6);
+  --aur-1: rgba(140,196,196,.30); --aur-2: rgba(26,125,176,.38); --aur-3: rgba(140,196,196,.16);
+  --glow: 0 0 0 1px rgba(140,196,196,.35), 0 10px 30px -14px rgba(26,125,176,.6);
+}
+:root[data-theme="light"] {
+  --bg: #f4f8fa; --panel-solid: #ffffff;
+  --text: #0f1a20; --muted: #5a6c75;
+  --green: #1f7a4d; --green-dim: #1a6a43; --cyan: #1a6f9e; --red: #c63d3a;
+  --acc: #1a6f9e; --acc-soft: rgba(26,125,176,.1); --acc-fg: #155d85;
+  --grad: linear-gradient(135deg, #4f9a9b, #1a7db0);
+  --on-green: #fff; --green-hover: #186640;
+  --topbar: rgba(255,255,255,.65);
+  --aur-1: #cfe8e8; --aur-2: #d3e6f3; --aur-3: #e6f2f2;
+  --glow: 0 0 0 1px rgba(26,111,158,.3), 0 10px 26px -14px rgba(26,111,158,.45);
+}
+.brand-logo { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: #fff; box-shadow: 0 6px 18px -10px rgba(0,0,0,.5); }
+.brand-logo img { width: 36px; height: auto; display: block; }
+.hero-title { display: flex; align-items: center; gap: 16px; }
+.hero-logo { width: clamp(48px, 9vw, 72px); height: auto; padding: 6px; background: #fff; border-radius: 16px; box-shadow: 0 10px 28px -14px rgba(0,0,0,.6); }
+.btn-primary { box-shadow: 0 10px 26px -12px rgba(26,125,176,.8); }
