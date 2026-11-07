@@ -11,7 +11,7 @@ const PASS = CFG.PASS_MARK || 70;
 const DOMAIN_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
 /* Site CCSP : banques Study Guide (chapitres 201-210) et Practice Tests (301-308), dans la même base
    Supabase que le site CISSP. Les chapitres CISSP (1-112, 401-408) ne sont pas chargés. */
-const SECTIONS = ["ccsp-guide", "ccsp-practice", "improve", "revision"];
+const SECTIONS = ["ccsp-guide", "ccsp-practice", "revision", "improve"];
 const DEF_SEC = "ccsp-guide";
 /** Chapitres de ce site. */
 const isOwnChapter = id => id > 200 && id < 400;
@@ -485,7 +485,7 @@ function errorPanel(title, msg, hint) {
 }
 
 // Numéro de version affiché discrètement à côté du logo (même numéro que l'APK : à changer à chaque version).
-const APP_VERSION = "3.2";
+const APP_VERSION = "3.3";
 function renderVersion() {
   if (document.getElementById("app-ver")) return;
   const brand = document.querySelector(".brand"); if (!brand) return;
@@ -948,7 +948,7 @@ function savedPanel() {
  *  (seulement ceux qui ont du contenu). Le chiffre est le nombre de questions (de fiches pour la révision). */
 function secTabs(sec) {
   const nIn = s => s === "improve" ? mistakes().length : s === "revision" ? REVISION.length : state.questions.filter(q => secOf(q.chapter_id) === s).length;
-  const SEC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice", improve: getLang() === "fr" ? "Axes d\'amélioration" : "Improvement areas", revision: t("rev.tab") };
+  const SEC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice", revision: t("rev.tab"), improve: getLang() === "fr" ? "Axes d'amélioration" : "Improvement areas" };
   const secs = Object.keys(SEC_NAMES).filter(hasSection);
   return secs.length > 1 ? `
     <div class="seg sec-tabs" role="group" aria-label="${esc(t("sec.label"))}">

@@ -1,7 +1,7 @@
 {
- "versionCode": 23,
- "versionName": "3.2",
+ "versionCode": 24,
+ "versionName": "3.3",
  "apk": "ccsp-training.apk",
- "notes_fr": "Vérification des mises à jour plus fréquente ; toucher le numéro de version pour vérifier",
- "notes": "More frequent update checks; tap the version number to check"
+ "notes_fr": "Onglet « Axes d'amélioration » déplacé à la fin",
+ "notes": "\"Improvement areas\" tab moved to the end"
 }
