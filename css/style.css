@@ -679,3 +679,39 @@ h1 { font-weight: 800; letter-spacing: -.015em; }
   .imp-tab { grid-template-columns: 1fr; justify-items: center; gap: 4px; padding: 8px 4px; }
   .imp-tab-name { display: none; }
 }
+
+/* ---- Mode TV : bouton 📺 sur le téléphone, écran d'affichage sur Android TV */
+.tv-btn.on { background: var(--accent, #2f8f6b); color: #fff; border-color: transparent; }
+.tv-input { height: 48px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg-2); color: var(--text);
+  font-size: 1.6rem; letter-spacing: .3em; text-align: center; width: 100%; box-sizing: border-box; }
+.tv-mode .topbar-right > :not(#mode-badge) { display: none; }
+.tv-mode .container { max-width: 1500px; }
+.tv-mode { font-size: 22px; }
+.tv-wait { text-align: center; padding: 8vh 16px; }
+.tv-wait h1 { font-size: 2.4rem; margin: .4em 0; }
+.tv-code { font-size: 6rem; font-weight: 800; letter-spacing: .12em; margin: .2em 0; color: var(--accent, #2f8f6b); }
+.tv-help { font-size: 1.4rem; color: var(--muted, #888); }
+.tv-quiz .q-text { font-size: 1.7rem; line-height: 1.35; }
+.tv-quiz .opt { font-size: 1.3rem; cursor: default; }
+.tv-quiz .explain p { font-size: 1.25rem; line-height: 1.5; }
+.tv-quiz .scenario p { font-size: 1.2rem; }
+.tv-mode .quiz { max-width: 1400px; }
+.tv-mode .footer { display: none; }
+/* Télé : en-tête réduit au logo, commande audio discrète tout en haut à droite */
+.tv-mode #mode-badge, .tv-mode .brand-text, .tv-mode #app-ver { display: none; }
+.tv-mode .topbar { padding-top: 6px; padding-bottom: 6px; }
+.tv-mode .tts-bar { top: 10px; right: 18px; left: auto; transform: none; padding: 2px 8px; gap: 4px; font-size: 13px;
+  background: color-mix(in srgb, var(--bg-2, #111) 55%, transparent); box-shadow: none; opacity: .6; border-radius: 18px; }
+.tv-mode .tts-bar:hover, .tv-mode .tts-bar:focus-within { opacity: 1; }
+/* choix de la voix : gardé sur la télé, tout en haut à gauche, à côté du logo */
+.tv-mode .tts-bar .tts-voice { position: fixed; top: 14px; left: 84px; max-width: 360px; height: 34px; font-size: 14px; opacity: .85; }
+.tv-mode .tts-bar .tts-btn { transform: scale(.85); }
+.tv-sheet .tv-sheet-title { font-size: 2rem; margin: .2em 0 .6em; }
+.tv-sheet .rev-pane { padding: 28px 36px; font-size: 1.25rem; line-height: 1.55; }
+.tv-sheet .rev-pane h4 { font-size: 1.45rem; margin: 1.1em 0 .4em; }
+
+/* Télé : barre de progression de la lecture, fine, en bas de l'écran */
+.tv-progress { position: fixed; z-index: 45; left: 0; right: 0; bottom: 0; height: 8px; background: color-mix(in srgb, var(--muted) 25%, transparent); }
+.tv-progress[hidden] { display: none; }
+.tv-progress-fill { display: block; height: 100%; width: 0; background: var(--acc, var(--accent, #4fd1c5)); transition: width .4s ease; }
+.tv-progress-txt { position: absolute; right: 18px; bottom: 14px; font-size: 14px; color: var(--muted); opacity: .8; font-variant-numeric: tabular-nums; }

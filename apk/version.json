@@ -1,7 +1,7 @@
 {
- "versionCode": 26,
- "versionName": "3.5",
+ "versionCode": 27,
+ "versionName": "3.6",
  "apk": "ccsp-training.apk",
- "notes_fr": "Lecture audio (FR / EN) dans l'onglet « Axes d'amélioration »",
- "notes": "Read aloud (EN / FR) in the \"Improvement areas\" tab"
+ "notes_fr": "Mode télé (Android TV) avec barre de progression et reconnexion automatique, Android Auto (fiches et quiz audio, sections, reprise), alerte quand une voix manque.",
+ "notes": "TV mode (Android TV) with progress bar and automatic reconnection, Android Auto (sheets and audio quizzes, sections, resume), warning when a voice is missing."
 }
