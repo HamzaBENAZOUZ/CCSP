@@ -696,7 +696,7 @@ function errorPanel(title, msg, hint) {
 }
 
 // Numéro de version affiché discrètement à côté du logo (même numéro que l'APK : à changer à chaque version).
-const APP_VERSION = "3.14";
+const APP_VERSION = "3.15";
 function renderVersion() {
   if (document.getElementById("app-ver")) return;
   const brand = document.querySelector(".brand"); if (!brand) return;
@@ -1087,9 +1087,10 @@ function tvRender() {
       <h2 class="q-text" data-tts="q">${esc(m.question)}</h2>
       ${m.multi ? `<p class="hint mono">${esc(t("quiz.multi", {}, m.lang))}</p>` : ""}
       <ol class="opts">${opts}</ol>
-      ${m.checked ? "" : `<p class="tv-answer-help muted">${(m.ui || m.lang) === "fr"
-        ? `🎤 Bouton micro de la télécommande : dis « A », « B »… ${m.multi ? "puis « valider »" : ""} · ou flèches + OK`
-        : `🎤 Remote mic button: say "A", "B"… ${m.multi ? "then \"check\"" : ""} · or arrows + OK`}
+      ${m.checked ? "" : `<p class="tv-answer-help muted">${tvCanListen() ? `<button class="btn btn-ghost btn-sm" id="tv-mic" tabindex="0">🎤 ${(m.ui || m.lang) === "fr" ? "Répondre à la voix" : "Answer by voice"}</button>` : ""}
+        ${(m.ui || m.lang) === "fr"
+        ? `Choisis avec les flèches + OK${tvCanListen() ? `, ou va sur 🎤, appuie sur OK et dis « A », « B »… ${m.multi ? "puis « valider »" : ""}` : ""}`
+        : `Pick with the arrows + OK${tvCanListen() ? `, or go to 🎤, press OK and say "A", "B"… ${m.multi ? "then \"check\"" : ""}` : ""}`}
         ${m.multi ? `<button class="btn btn-primary btn-sm" id="tv-check" tabindex="0">${(m.ui || m.lang) === "fr" ? "Valider" : "Check"}</button>` : ""}</p>`}
       ${m.checked ? `<div class="explain ${m.ok ? "ok" : "ko"}">
         <p class="mono verdict">${esc(m.ok ? t("quiz.granted", {}, m.ui) : t("quiz.denied", { a: m.correct.join(", ") }, m.ui))}</p>
@@ -1104,10 +1105,12 @@ function tvRender() {
     const f = (tvFocusL && app.querySelector(`.tv-quiz .opt[data-letter="${tvFocusL}"]`)) || app.querySelector(".tv-quiz .opt[data-letter]");
     if (f) f.focus({ preventScroll: true });
     const c = document.getElementById("tv-check"); if (c) c.onclick = () => tvAnswer({ t: "check" });
+    const mic = document.getElementById("tv-mic"); if (mic) mic.onclick = () => window.__tvVoiceKey();
   }
 }
 /* ---- Télé : répondre depuis la télé (télécommande ou voix), la réponse part au téléphone qui la valide. */
 let tvFocusL = "", tvFocusN = 0;
+const tvCanListen = () => !!(nativeTTS && typeof nativeTTS.listen === "function");
 function tvAnswer(msg) {
   const m = tvLast; if (!tv || !m || m.t !== "q" || m.checked) return;
   tv.link.send({ ...msg, n: m.n });
@@ -1117,8 +1120,8 @@ if (IS_TV) document.addEventListener("keydown", e => {
   const opts = [...app.querySelectorAll(".tv-quiz .opt[data-letter]")]; if (!opts.length) return;
   const cur = opts.indexOf(document.activeElement);
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-    const chk = document.getElementById("tv-check");
-    const list = chk ? [...opts, chk] : opts, at = list.indexOf(document.activeElement);
+    const extra = ["tv-check", "tv-mic"].map(id => document.getElementById(id)).filter(Boolean);
+    const list = [...opts, ...extra], at = list.indexOf(document.activeElement);
     const nx = list[Math.max(0, Math.min(list.length - 1, at < 0 ? 0 : at + (e.key === "ArrowDown" ? 1 : -1)))];
     nx.focus({ preventScroll: false }); if (nx.dataset.letter) tvFocusL = nx.dataset.letter;
     e.preventDefault(); return;
