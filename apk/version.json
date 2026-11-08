@@ -1,7 +1,7 @@
 {
- "versionCode": 27,
- "versionName": "3.6",
+ "versionCode": 28,
+ "versionName": "3.7",
  "apk": "ccsp-training.apk",
- "notes_fr": "Mode télé (Android TV) avec barre de progression et reconnexion automatique, Android Auto (fiches et quiz audio, sections, reprise), alerte quand une voix manque.",
- "notes": "TV mode (Android TV) with progress bar and automatic reconnection, Android Auto (sheets and audio quizzes, sections, resume), warning when a voice is missing."
+ "notes_fr": "Mode Speed (icône ⚡) : question et propositions lues deux fois, 30 s pour répondre, correction lue, question suivante automatique.",
+ "notes": "Speed mode (⚡ icon): question and options read twice, 30 s to answer, explanation read, automatic next question."
 }
