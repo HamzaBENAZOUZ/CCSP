@@ -696,7 +696,7 @@ function errorPanel(title, msg, hint) {
 }
 
 // Numéro de version affiché discrètement à côté du logo (même numéro que l'APK : à changer à chaque version).
-const APP_VERSION = "3.15";
+const APP_VERSION = "3.16";
 function renderVersion() {
   if (document.getElementById("app-ver")) return;
   const brand = document.querySelector(".brand"); if (!brand) return;
@@ -1202,7 +1202,17 @@ const AUTO_PAUSE = "##PAUSE##";
 function exportAuto() {
   if (!nativeTTS || typeof nativeTTS.saveAuto !== "function" || !state.questions) return;
   try {
-    const lang = getLang(), fr = lang === "fr";
+    // les deux langues sont préparées : la voiture peut passer du français à l'anglais (bouton 🌐) sans le téléphone
+    const langs = {};
+    for (const lang of ["fr", "en"]) langs[lang] = { groups: autoGroups(lang) };
+    nativeTTS.saveAuto(JSON.stringify({ v: 3, lang: getLang(), rate: ttsRate, pauseMs: 6000,
+      voice: { fr: voicePref("fr"), en: voicePref("en") }, langs }));
+  } catch (e) { console.error("exportAuto", e); }
+}
+/** Contenu à écouter en voiture dans une langue : fiches et quiz audio, en groupes. */
+function autoGroups(lang) {
+  {
+    const fr = lang === "fr";
     // « § » = début de section : le lecteur de la voiture permet d'y sauter (section suivante / précédente, liste des sections).
     const clean = l => l.startsWith("## ") ? "§ " + l.slice(3) + "." : l.startsWith("- ") ? l.slice(2) : l;
     const lines = (r, panes, L = lang) => panes.flatMap(p => ["§ " + t("rev.pane." + p, {}, L) + ".", ...revLines(r, p, L).map(clean)]);
@@ -1231,9 +1241,8 @@ function exportAuto() {
       groups.push({ title: (fr ? "Quiz audio · " : "Audio quiz · ") + name,
         subtitle: fr ? "40 questions au hasard" : "40 random questions", items: pick(fr && cs.some(hasFr) ? cs.filter(hasFr) : cs, 40).map(quizItem) });
     }
-    nativeTTS.saveAuto(JSON.stringify({ v: 2, lang, rate: ttsRate, pauseMs: 6000,
-      voice: { fr: voicePref("fr"), en: voicePref("en") }, groups }));
-  } catch (e) { console.error("exportAuto", e); }
+    return groups;
+  }
 }
 
 // ------------------------------------------------------------------ boot
