@@ -1,7 +1,7 @@
 {
- "versionCode": 37,
- "versionName": "3.16",
+ "versionCode": 38,
+ "versionName": "3.17",
  "apk": "ccsp-training.apk",
- "notes_fr": "Android Auto : bouton 🌐 pour passer du français à l'anglais (et inversement) directement dans la voiture.",
- "notes": "Android Auto: 🌐 button to switch between French and English right in the car."
+ "notes_fr": "Android Auto : pendant une alerte (GPS, appel…), la lecture se met en pause au lieu de baisser le volume, puis reprend à la phrase interrompue.",
+ "notes": "Android Auto: during an alert (GPS, call…), reading pauses instead of lowering the volume, then resumes at the interrupted sentence."
 }
