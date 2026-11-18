@@ -1,7 +1,7 @@
 {
- "versionCode": 39,
- "versionName": "3.18",
+ "versionCode": 40,
+ "versionName": "3.19",
  "apk": "ccsp-training.apk",
- "notes_fr": "Mode Speed : lecture continue de la question avec de vraies pauses (même voix, lecteur qui reste affiché) ; la correction n'est plus sautée dans le navigateur.",
- "notes": "Speed mode: continuous question reading with real pauses (same voice, player stays on screen); the explanation is no longer skipped in the browser."
+ "notes_fr": "Lecture audio en arrière-plan : la lecture continue quand on quitte l'appli ou qu'on verrouille le téléphone, avec une notification lecture/pause/précédent/suivant.",
+ "notes": "Background audio: reading continues when you leave the app or lock the phone, with a play/pause/previous/next notification."
 }
