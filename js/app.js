@@ -341,8 +341,10 @@ function hlShow(u) {
   if (HL_API && u.range) { CSS.highlights.set("tts", new Highlight(u.range)); rect = u.range.getBoundingClientRect(); }
   else { hlEl = u.el; hlEl.classList.add("tts-on"); rect = hlEl.getBoundingClientRect(); }
   // garde la phrase lue visible à l'écran
-  const vh = window.innerHeight || 600;
-  if (rect && rect.height && (rect.top < 70 || rect.bottom > vh - 24)) window.scrollBy({ top: rect.top - vh / 3, behavior: "smooth" });
+  // (la barre de lecture fixée en haut cachait la phrase quand elle se trouvait juste dessous : en haut de la fiche)
+  const vh = window.innerHeight || 600, bar = document.getElementById("tts-bar");
+  const top = Math.max(70, bar && !bar.hidden ? bar.getBoundingClientRect().bottom + 8 : 0);
+  if (rect && rect.height && (rect.top < top || rect.bottom > vh - 24)) window.scrollBy({ top: rect.top - Math.max(vh / 3, top + 16), behavior: "smooth" });
 }
 /** Découpe un texte en phrases : liste de [début, fin] (espaces exclus). */
 function sentenceSpans(text, lang) {
@@ -390,11 +392,13 @@ function speechUnits(parts, lang) {
   return units;
 }
 /** Lit des phrases (anglais ou français) en surlignant celle en cours ; un second clic sur le même bouton arrête. */
+/* Les émojis des libellés (« 📚 Tout le chapitre », « 📘 Livre ») ne sont pas lus à voix haute. */
+const noEmoji = x => String(x).replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\uFE0F\u200D]/gu, "").replace(/\s{2,}/g, " ").trim();
 function speakUnits(key, units, lang, btn, onEnd) {
   if (!canSpeak) return;
   if (speakingId === key) { stopSpeak(); return; }
   stopSpeak();
-  units = units.filter(u => u.text || u.pause);
+  units = units.filter(u => u.text || u.pause).map(u => u.text ? { ...u, text: noEmoji(u.text) } : u).filter(u => u.text || u.pause);
   while (units.length && units[units.length - 1].pause) units.pop();
   if (!units.some(u => u.text)) units = [];
   if (!units.length) { if (onEnd) onEnd(); return; }
@@ -763,7 +767,7 @@ function errorPanel(title, msg, hint) {
 }
 
 // Numéro de version affiché discrètement à côté du logo (même numéro que l'APK : à changer à chaque version).
-const APP_VERSION = "3.19";
+const APP_VERSION = "3.20";
 function renderVersion() {
   if (document.getElementById("app-ver")) return;
   const brand = document.querySelector(".brand"); if (!brand) return;
@@ -1816,6 +1820,13 @@ function revBook(r, lang) {
 const revLines = (r, pane, lang) => pane === "sum" ? r.sum[lang] : pane === "book" ? (revBook(r, lang) || [t("rev.bookNone")]) : r[pane][lang];
 const revOpen = new Map();   // chapitre -> volet affiché
 /** En-tête lu avant la fiche (« Chapitre n. Titre. Volet. ») ; le texte lui-même est lu depuis la page. */
+/** En-tête lu avant la fiche, surligné à l'écran comme le reste : le titre de la carte (« CH_13 Gestion… »)
+ *  puis le bouton du volet affiché (« Tout le chapitre »). Lecture dans l'autre langue : en-tête lu sans surlignage. */
+function revIntro(d, r, pane, l) {
+  const title = d.querySelector("summary .ch-title"), btn = d.querySelector(`[data-revpane="${pane}"]`);
+  if (l !== getLang() || !title || !title.textContent.trim()) return [revSpeech(r, pane, l)];
+  return [{ el: title, prefix: (l === "fr" ? "Chapitre " : "Chapter ") + (r.id - 200) + "." }, btn && noEmoji(btn.textContent) ? { el: btn } : t("rev.pane." + pane, {}, l)];
+}
 function revSpeech(r, pane, lang) {
   const c = chById(r.id), title = c ? (lang === "fr" && c.title_fr ? c.title_fr : c.title) : "";
   const head = t("rev.pane." + pane, {}, lang);
@@ -1900,7 +1911,7 @@ function renderRevision() {
         box.innerHTML = revPaneHtml(r, pane, l); box.lang = l;
         restore = () => { if (box.isConnected && (revOpen.get(id) || "sum") === pane) { box.innerHTML = revPaneHtml(r, pane, getLang()); box.removeAttribute("lang"); } };
       }
-      const parts = [revSpeech(r, pane, l), ...[...box.querySelectorAll("h4, p, li")].map(el => ({ el }))];
+      const parts = [...revIntro(d, r, pane, l), ...[...box.querySelectorAll("h4, p, li")].map(el => ({ el }))];
       speakUnits(k, speechUnits(parts, l), l, b, restore);
     });
   });

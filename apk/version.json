@@ -1,7 +1,7 @@
 {
- "versionCode": 40,
- "versionName": "3.19",
+ "versionCode": 41,
+ "versionName": "3.20",
  "apk": "ccsp-training.apk",
- "notes_fr": "Lecture audio en arrière-plan : la lecture continue quand on quitte l'appli ou qu'on verrouille le téléphone, avec une notification lecture/pause/précédent/suivant.",
- "notes": "Background audio: reading continues when you leave the app or lock the phone, with a play/pause/previous/next notification."
+ "notes_fr": "Surlignage jaune réparé au début de la lecture des fiches : le titre du chapitre et le volet sont surlignés, la phrase lue n'est plus cachée sous la barre de lecture, et les émojis ne sont plus lus à voix haute.",
+ "notes": "Yellow highlight fixed at the start of reading a sheet: the chapter title and pane are highlighted, the sentence read is no longer hidden under the reading bar, and emojis are no longer read aloud."
 }
