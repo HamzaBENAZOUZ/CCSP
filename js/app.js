@@ -445,13 +445,25 @@ function audioText(x, lang) {
     .replace(/\s+([,.;:!?])/g, "$1").replace(/([,;])\s*[,;]+/g, "$1").replace(/\s{2,}/g, " ").trim();
   return s;
 }
+/* Sigles lus lettre par lettre : « TCP » devient « T.C.P » (sinon certaines voix disent « tcep »).
+   Les sigles qui se prononcent comme un mot restent tels quels. Le texte affiché ne change pas. */
+const ACR_WORDS = new Set(("NAT WEP SAML PASTA STRIDE DREAD VAST TRIKE OCTAVE OWASP SCADA RAID CASB SASE SABSA TOGAF COBIT ITIL COSO NIST FAIR ISACA CERT " +
+  "LAND KRACK SPIT PIN HIPAA SOX COPPA FERPA FISMA ITAR EAR SCAP SHA REST SOAP JSON TOCTOU SAMM BSIMM IDEAL COTS RAD SAST DAST IAST SIEM SOAR " +
+  "CSIRT CIRT SOC SCIM LDAP LDAPS RADIUS TACACS FIDO XACML PAM ABAC RBAC MAC DAC ISO MITRE ATTACK POP IMAP ARP IKE DNSSEC PAP CHAP EAP PEAP " +
+  "JPEG ASCII SIP NAC WAF VXLAN VLAN LAN WAN TKIP IMSI SIM MIME IDEA CISO PUF SYN ACK NATO UNIX BEST MOST PLUS MIEUX FIRST PRIMARY MAIN PREMIER PREMI SURTOUT MOINS VRAIE FAUSSE TRUE FALSE NOT PAS SAUF LEAST FEWEST HIGHEST MAINLY AVOIDED BEFORE MUST AVANT MINIMUM UPDATE SELECT WHERE BEGIN COMMIT FORTE VITER TEMPEST LEAP ACID COPE OVAL FAST SENTRY CAST POODLE BEAST GHOST SOCKS OASIS OAKLEY WORM PATRIOT CARROT HOSTS LAPS BIOS DARPA FEMA CNIL OSINT INERGEN SONET STAR ENISA FIPS SAN NAS GAAP CAIQ STIG").split(" "));
+/* Sigles épelés lettre par lettre, séparées par des espaces (avec des points, certaines voix disaient « point »). */
+/* Sigles épelés lettre par lettre, séparées par des espaces (avec des points, certaines voix disaient « point »). */
+function spellAcr(x, lang) {
+  if (typeof x !== "string") return x;
+  return audioText(x, lang).replace(/\b[A-Z]{2,7}\b/g, w => ACR_WORDS.has(w) ? w : w.split("").join(" "));
+}
 /* Les émojis des libellés (« 📚 Tout le chapitre », « 📘 Livre ») ne sont pas lus à voix haute. */
 const noEmoji = x => String(x).replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\uFE0F\u200D]/gu, "").replace(/\s{2,}/g, " ").trim();
 function speakUnits(key, units, lang, btn, onEnd) {
   if (!canSpeak) return;
   if (speakingId === key) { stopSpeak(); return; }
   stopSpeak();
-  units = units.filter(u => u.text || u.pause).map(u => u.text ? { ...u, text: audioText(noEmoji(u.text), lang) } : u).filter(u => u.text || u.pause);
+  units = units.filter(u => u.text || u.pause).map(u => u.text ? { ...u, text: spellAcr(noEmoji(u.text), lang) } : u).filter(u => u.text || u.pause);
   while (units.length && units[units.length - 1].pause) units.pop();
   if (!units.some(u => u.text)) units = [];
   if (!units.length) { if (onEnd) onEnd(); return; }
@@ -820,7 +832,7 @@ function errorPanel(title, msg, hint) {
 }
 
 // Numéro de version affiché discrètement à côté du logo (même numéro que l'APK : à changer à chaque version).
-const APP_VERSION = "3.22";
+const APP_VERSION = "3.23";
 function renderVersion() {
   if (document.getElementById("app-ver")) return;
   const brand = document.querySelector(".brand"); if (!brand) return;
@@ -1351,7 +1363,7 @@ function exportAuto() {
     const langs = {};
     for (const lang of ["fr", "en"]) langs[lang] = { groups: autoGroups(lang) };
     // texte adapté à l'écoute aussi en voiture (les marqueurs « ##PAUSE## » ne sont pas touchés)
-    for (const [lg, L] of Object.entries(langs)) for (const g of L.groups) for (const it of g.items) if (it.parts) it.parts = it.parts.map(x => /^##/.test(x) ? x : audioText(noEmoji(x), lg));
+    for (const [lg, L] of Object.entries(langs)) for (const g of L.groups) for (const it of g.items) if (it.parts) it.parts = it.parts.map(x => /^##/.test(x) ? x : spellAcr(noEmoji(x), lg));
     nativeTTS.saveAuto(JSON.stringify({ v: 3, lang: getLang(), rate: ttsRate, pauseMs: 6000,
       voice: { fr: voicePref("fr"), en: voicePref("en") }, langs }));
   } catch (e) { console.error("exportAuto", e); }
