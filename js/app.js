@@ -392,6 +392,10 @@ function speechUnits(parts, lang) {
     if (p.pause) { units.push({ pause: p.pause, text: "" }); continue; }   // silence (mode Speed : 1 s entre les propositions)
     if (typeof p === "string") { const x = joinSpeech([p]); if (x) units.push({ text: x }); continue; }
     if (!p.el) continue;
+    if (typeof p.say === "string") {   // libellé d'interface remplacé par une formule naturelle (ou passé si vide)
+      if (p.say) units.push({ text: p.say, el: p.el, range: HL_API ? textRange(p.el, 0, p.el.textContent.length) : null });
+      continue;
+    }
     const text = p.el.textContent, spans = sentenceSpans(text, lang);
     spans.forEach(([a, b], i) => {
       let x = text.slice(a, b);
@@ -403,13 +407,51 @@ function speechUnits(parts, lang) {
   return units;
 }
 /** Lit des phrases (anglais ou français) en surlignant celle en cours ; un second clic sur le même bouton arrête. */
+/* ---- Texte adapté à l'écoute ----
+   Le texte affiché ne change pas ; seul le texte envoyé à la voix est réécrit comme on le dirait à l'oral :
+   « TCP/IP » -> « TCP IP », « lecture/écriture » -> « lecture ou écriture », « → » -> une pause, « ≠ » -> « différent de »,
+   « i.e. » -> « c'est-à-dire », « utilisateur(s) » -> « utilisateurs »… (sinon la voix dit « slash », « point », « flèche »). */
+const SAY = {
+  fr: { ie: "c'est-à-dire", eg: "par exemple", vs: "contre", or: "ou", and: "et", ne: "différent de", le: "inférieur ou égal à",
+        ge: "supérieur ou égal à", approx: "environ", times: "fois", minus: "moins", per: "sur", pow: "puissance" },
+  en: { ie: "that is", eg: "for example", vs: "versus", or: "or", and: "and", ne: "not equal to", le: "at most",
+        ge: "at least", approx: "about", times: "times", minus: "minus", per: "per", pow: "to the power of" },
+};
+function audioText(x, lang) {
+  if (typeof x !== "string" || !x) return x;
+  const L = SAY[lang === "fr" || lang === "en" ? lang : /[àâçéèêëîïôûùœ]/i.test(x) ? "fr" : "en"];
+  let s = x
+    .replace(/\bi\.\s?e\.,?/gi, L.ie + ",").replace(/\be\.\s?g\.,?/gi, L.eg + ",").replace(/\bp\.\s?ex\./gi, L.eg).replace(/\bc\.-à-d\./gi, "c'est-à-dire")
+    .replace(/\bvs\.?(?=\s)/gi, L.vs)
+    .replace(/\b(et|and)\s*\/\s*(ou|or)\b/gi, L.or)
+    .replace(/(\p{L})\((s|e|es|x|nt)\)/gu, "$1$2");   // utilisateur(s), protégé(e)
+  if (!/:\/\//.test(s)) {
+    s = s.replace(/(\d)\s*\/\s*(\d)/g, `$1 ${L.per} $2`);
+    for (let k = 0; k < 4; k++) {   // A/B/C : plusieurs barres de suite
+      const t2 = s.replace(/([\p{L}\p{N}][\p{L}\p{N}.+-]*)\s*\/\s*([\p{L}\p{N}][\p{L}\p{N}+-]*)/gu,
+        (m, a, b) => /^[A-Z0-9.+-]+$/.test(a) && /^[A-Z0-9+-]+$/.test(b) ? `${a} ${b}` : `${a} ${L.or} ${b}`);
+      if (t2 === s) break; s = t2;
+    }
+    s = s.replace(/\s\/\s/g, ", ").replace(/\//g, " ");
+  }
+  s = s
+    .replace(/\s*[→⇒⟶➔➜←⇐↔⇔]\s*/g, ", ")
+    .replace(/\s*≠\s*/g, ` ${L.ne} `).replace(/\s*≤\s*/g, ` ${L.le} `).replace(/\s*≥\s*/g, ` ${L.ge} `)
+    .replace(/\s*≈\s*/g, ` ${L.approx} `).replace(/~\s?(?=\d)/g, `${L.approx} `)
+    .replace(/\s*×\s*/g, ` ${L.times} `).replace(/(\d)\s+x\s+(?=\d)/g, `$1 ${L.times} `).replace(/(\w)\^(\w)/g, `$1 ${L.pow} $2`)
+    .replace(/[−-](?=\d)(?<=(?:^|\s)[−-])/g, `${L.minus} `).replace(/\s[−–—]\s/g, ", ").replace(/[−–—]/g, " ")
+    .replace(/\s&\s/g, ` ${L.and} `)
+    .replace(/[•▪◦#*_|~^`]/g, " ")
+    .replace(/\s+([,.;:!?])/g, "$1").replace(/([,;])\s*[,;]+/g, "$1").replace(/\s{2,}/g, " ").trim();
+  return s;
+}
 /* Les émojis des libellés (« 📚 Tout le chapitre », « 📘 Livre ») ne sont pas lus à voix haute. */
 const noEmoji = x => String(x).replace(/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\uFE0F\u200D]/gu, "").replace(/\s{2,}/g, " ").trim();
 function speakUnits(key, units, lang, btn, onEnd) {
   if (!canSpeak) return;
   if (speakingId === key) { stopSpeak(); return; }
   stopSpeak();
-  units = units.filter(u => u.text || u.pause).map(u => u.text ? { ...u, text: noEmoji(u.text) } : u).filter(u => u.text || u.pause);
+  units = units.filter(u => u.text || u.pause).map(u => u.text ? { ...u, text: audioText(noEmoji(u.text), lang) } : u).filter(u => u.text || u.pause);
   while (units.length && units[units.length - 1].pause) units.pop();
   if (!units.some(u => u.text)) units = [];
   if (!units.length) { if (onEnd) onEnd(); return; }
@@ -778,7 +820,7 @@ function errorPanel(title, msg, hint) {
 }
 
 // Numéro de version affiché discrètement à côté du logo (même numéro que l'APK : à changer à chaque version).
-const APP_VERSION = "3.21";
+const APP_VERSION = "3.22";
 function renderVersion() {
   if (document.getElementById("app-ver")) return;
   const brand = document.querySelector(".brand"); if (!brand) return;
@@ -1308,6 +1350,8 @@ function exportAuto() {
     // les deux langues sont préparées : la voiture peut passer du français à l'anglais (bouton 🌐) sans le téléphone
     const langs = {};
     for (const lang of ["fr", "en"]) langs[lang] = { groups: autoGroups(lang) };
+    // texte adapté à l'écoute aussi en voiture (les marqueurs « ##PAUSE## » ne sont pas touchés)
+    for (const [lg, L] of Object.entries(langs)) for (const g of L.groups) for (const it of g.items) if (it.parts) it.parts = it.parts.map(x => /^##/.test(x) ? x : audioText(noEmoji(x), lg));
     nativeTTS.saveAuto(JSON.stringify({ v: 3, lang: getLang(), rate: ttsRate, pauseMs: 6000,
       voice: { fr: voicePref("fr"), en: voicePref("en") }, langs }));
   } catch (e) { console.error("exportAuto", e); }
@@ -1854,16 +1898,25 @@ function revBook(r, lang) {
 const revLines = (r, pane, lang) => pane === "sum" ? r.sum[lang] : pane === "book" ? (revBook(r, lang) || [t("rev.bookNone")]) : r[pane][lang];
 const revOpen = new Map();   // chapitre -> volet affiché
 /** En-tête lu avant la fiche (« Chapitre n. Titre. Volet. ») ; le texte lui-même est lu depuis la page. */
+/** Ce que la voix dit pour annoncer un volet (pas le libellé du bouton : ni émoji, ni « Tout le chapitre », ni « Livre : Summary »).
+ *  Vide = rien d'annoncé (le Résumé vient juste après le titre du chapitre). */
+const PANE_SAY = {
+  fr: { sum: "", all: "", audio: "", tips: "Pour préparer l'examen.", mem: "À retenir.", book: "Extrait du livre.", bsum: "Le résumé du livre.", bess: "L'essentiel du livre pour l'examen." },
+  en: { sum: "", all: "", audio: "", tips: "Preparing for the exam.", mem: "Key points to remember.", book: "From the book.", bsum: "The book's summary.", bess: "The book's study essentials." },
+};
+const paneSay = (p, l) => { const m = PANE_SAY[l === "fr" ? "fr" : "en"]; return p in m ? m[p] : null; };
 /** En-tête lu avant la fiche, surligné à l'écran comme le reste : le titre de la carte (« CH_13 Gestion… »)
  *  puis le bouton du volet affiché (« Tout le chapitre »). Lecture dans l'autre langue : en-tête lu sans surlignage. */
 function revIntro(d, r, pane, l) {
   const title = d.querySelector("summary .ch-title"), btn = d.querySelector(`[data-revpane="${pane}"]`);
   if (l !== getLang() || !title || !title.textContent.trim()) return [revSpeech(r, pane, l)];
-  return [{ el: title, prefix: (l === "fr" ? "Chapitre " : "Chapter ") + (r.id - 200) + "." }, btn && noEmoji(btn.textContent) ? { el: btn } : t("rev.pane." + pane, {}, l)];
+  const say = paneSay(pane, l);
+  return [{ el: title, prefix: (l === "fr" ? "Chapitre " : "Chapter ") + (r.id - 200) + "." },
+    say === null ? t("rev.pane." + pane, {}, l) : btn ? { el: btn, say } : say];
 }
 function revSpeech(r, pane, lang) {
   const c = chById(r.id), title = c ? (lang === "fr" && c.title_fr ? c.title_fr : c.title) : "";
-  const head = t("rev.pane." + pane, {}, lang);
+  const say = paneSay(pane, lang), head = say === null ? t("rev.pane." + pane, {}, lang) : say;
   return joinSpeech([(lang === "fr" ? "Chapitre " : "Chapter ") + (r.id - 200), title, head]);
 }
 function revPaneHtml(r, pane, lang) {
