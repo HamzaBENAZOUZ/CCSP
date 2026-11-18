@@ -747,3 +747,5 @@ h1 { font-weight: 800; letter-spacing: -.015em; }
 .tts-bar.in-topbar .tts-voice { max-width: 170px; height: 26px; padding: 0 6px; font-size: .74rem; }
 /* écran moyen : la barre passe sur sa propre petite ligne sous le logo et les boutons de l'en-tête */
 @media (max-width: 1499px) { .tts-bar.in-topbar { order: 3; } }
+/* Temps de lecture estimé devant les boutons « Lire » (3.25) */
+.read-est { font-size: .75rem; color: var(--muted); white-space: nowrap; align-self: center; margin-right: .1rem; }
