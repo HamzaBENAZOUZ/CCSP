@@ -783,3 +783,38 @@ body { overflow-wrap: break-word; }
   .tts-bar .tts-pos { font-size: .72rem; }
   .tts-bar .tts-voice { max-width: 150px; height: 32px; font-size: .78rem; min-width: 0; }
 }
+
+/* Option ESL (3.28) */
+.esl-opt { display: flex; align-items: center; gap: 8px; margin-top: 10px; cursor: pointer; }
+.esl-opt input { width: 18px; height: 18px; accent-color: var(--accent, currentColor); }
+/* Révision + Livre fusionnés (3.28) : volets du livre repérés, titres de partie dans « Tout le chapitre » */
+.rev-panes .seg-btn.seg-book:not([aria-pressed="true"]) { font-style: italic; }
+.rev-pane h3.rev-part { margin: 1.6rem 0 .5rem; padding-top: .9rem; border-top: 1px solid var(--line-2); font-size: 1.1rem; }
+.rev-pane h3.rev-part:first-child { margin-top: .2rem; padding-top: 0; border-top: 0; }
+.rev-card > summary .ch-title { min-width: 0; }
+.tv-sheet .rev-pane h3.tv-sheet-sec { font-size: 1.7rem; margin: 1.6em 0 .3em; padding-top: .6em; border-top: 2px solid var(--line, rgba(127,127,127,.3)); }
+.tv-sheet .rev-pane h3.tv-sheet-sec:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+/* ---- Identifiant des questions (BK_) + onglet « Rechercher » ---- */
+.qref { font-family: var(--mono); font-size: .72rem; font-weight: 500; letter-spacing: .02em; color: var(--muted); opacity: .75;
+  border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; vertical-align: middle; white-space: nowrap; user-select: all; }
+.q-count .qref { font-size: .7rem; margin-left: 4px; }
+.srch-panel { display: flex; flex-direction: column; gap: 10px; }
+.srch-input { width: 100%; box-sizing: border-box; font-size: 1rem; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--opt-bg, var(--panel)); color: var(--text); }
+.srch-input:focus { outline: 2px solid var(--green-dim); outline-offset: 1px; }
+.srch-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.srch-filters select { flex: 1 1 160px; min-width: 0; }
+.srch-selbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  position: sticky; top: var(--topbar, 0); z-index: 5; background: var(--panel-solid, var(--panel)); padding: 6px 0; }
+.srch-selbar .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.srch-mix { display: inline-flex; gap: 4px; align-items: center; }
+.srch-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.srch-item { display: flex; align-items: flex-start; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+.srch-item.on { border-color: var(--green); box-shadow: var(--glow); }
+.srch-check { padding-top: 3px; }
+.srch-check input { width: 18px; height: 18px; cursor: pointer; }
+.srch-body { flex: 1; min-width: 0; cursor: pointer; }
+.srch-meta { margin: 0 0 2px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.srch-text { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.srch-st.ok { color: var(--green); } .srch-st.ko { color: var(--red); }
+.srch-answer { margin-left: auto; }

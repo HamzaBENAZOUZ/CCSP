@@ -2,6 +2,8 @@ import { SupabaseStore, LocalStore, latestByQuestion } from "./store.js";
 import { t, getLang, setLang, locale } from "./i18n.js";
 import { offlineEnabled, registerSW, unregisterSW, autonomous, setAutonomous } from "./offline.js";
 import { REVISION } from "./revision.js";   // fiches « Révision CCSP » (chapitres 201-210)
+import { REVAUDIO } from "./revision-audio.js";
+REVISION.forEach(r => { if (REVAUDIO[r.id]) r.audio = REVAUDIO[r.id]; });   // volet « Version audio » des chapitres
 
 /** Vrai dans l'application Android (pont vocal AndroidTTS fourni par l'APK). */
 const IN_APP = !!window.AndroidTTS;
@@ -11,15 +13,16 @@ const PASS = CFG.PASS_MARK || 70;
 const DOMAIN_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
 /* Site CCSP : banques Study Guide (chapitres 201-210) et Practice Tests (301-308), dans la même base
    Supabase que le site CISSP. Les chapitres CISSP (1-112, 401-408) ne sont pas chargés. */
-const SECTIONS = ["ccsp-guide", "ccsp-practice", "revision", "improve"];
+const SECTIONS = ["ccsp-guide", "ccsp-practice", "revision", "improve", "search"];
 const DEF_SEC = "ccsp-guide";
+const CCSP_DOMS = [1, 2, 3, 4, 5, 6];
 /** Chapitres de ce site. */
 const isOwnChapter = id => id > 200 && id < 400;
 
 const app = document.getElementById("app");
 const state = {
   store: null, session: null,
-  chapters: [], questions: [], byId: new Map(),
+  chapters: [], questions: [], byId: new Map(), notes: new Map(),
   attempts: [], latest: new Map(),
   quiz: null, timer: null, lastResult: null,
   view: "boot", authMode: "login",
@@ -534,7 +537,10 @@ function playFrom(from) {
       go();
       // Le moteur vocal d'Android ne démarre parfois pas (souvent la toute première lecture, moteur endormi) :
       // si rien n'a commencé au bout de 2,5 s, on relance une fois.
-      setTimeout(() => { if (!heard && alive() && !P.paused && !P.retried) { P.retried = true; go(); } }, 2500);
+      // (Depuis la version 3.28, l'appli a son propre chien de garde de 7 s qui reprend avec Google : pas de relance ici,
+      // sinon une voix lente à démarrer, comme sur la télé, repartait au début au bout de 2,5 s.)
+      const native7s = typeof nativeTTS.appVersion === "function" && nativeTTS.appVersion() >= 49;
+      if (!native7s) setTimeout(() => { if (!heard && alive() && !P.paused && !P.retried) { P.retried = true; go(); } }, 2500);
     } else {   // appli plus ancienne : une phrase après l'autre
       let i = 0;
       const next = () => {
@@ -733,7 +739,7 @@ function speedStep() {
     sp.startCount = startCount;
     if (tv && tv.ok) {   // télé : c'est elle qui lit, et elle prévient quand elle a fini (repli : durée estimée)
       tvDoneCb = m => { if (m.mode === "speedq" && m.n === i + 1) startCount(); };
-      tvSpeak("speedq"); setTimeout(startCount, 2 * tvReadMs(box) + 8000);
+      tvSpeak("speedq"); tvAwait(i + 1, 2 * tvReadMs(box) + 15000, startCount);
     } else if (canSpeak && box) {
       readTwice("speed:" + q.id + ":" + i, () => !alive() || z.sp !== sp || sp.phase !== "reading" || z.checked[i] ? "abort"
         : sp.touched || z.picks[i].length ? "done" : true, startCount);
@@ -790,7 +796,7 @@ function speedAfterCheck() {
   const box = app.querySelector(".question-panel"), q = z.questions[i];
   if (tv && tv.ok) {
     tvDoneCb = m => { if (m.mode === "answer" && m.n === i + 1) goNext(); };
-    tvSpeak("answer"); setTimeout(goNext, tvReadMs(box && box.querySelector(".explain")) + 8000);
+    tvSpeak("answer"); tvAwait(i + 1, tvReadMs(box) + 12000, goNext);
   }
   else if (canSpeak && box) {
     const lang = box.lang || getLang();
@@ -810,6 +816,18 @@ function bindSpeak(list) {
 const chTitle = c => (c ? (getLang() === "fr" && c.title_fr ? c.title_fr : c.title) : "");
 const chById = id => state.chapters.find(c => c.id === id);
 
+/* Téléphone, mode Speed : on attend la fin annoncée par la télé. Le délai de secours (si la télé ne répond plus) est
+   repoussé tant que la télé signale qu'elle lit encore (message « busy »), pour ne jamais couper une lecture lente. */
+let tvWait = null;
+function tvAwait(n, ms, fn) {
+  if (tvWait) clearTimeout(tvWait.t);
+  const w = tvWait = { n, fn, t: 0 };
+  w.t = setTimeout(() => { if (tvWait === w) tvWait = null; fn(); }, ms);
+}
+function tvBusy(n) {
+  const w = tvWait; if (!w || w.n !== n) return;
+  clearTimeout(w.t); w.t = setTimeout(() => { if (tvWait === w) tvWait = null; w.fn(); }, 6000);
+}
 // ---- Sections : « guide » = Study Guide CISSP (chapitres 1-21), « practice » = Official Practice Tests CISSP (101-112),
 // « ccsp-guide » = Study Guide CCSP (201-210), « ccsp-practice » = Official Practice Tests CCSP (301-308).
 // « lastmile » = QCM originaux rédigés d'après « CISSP: The Last Mile » (401-408 = domaines 1-8).
@@ -819,7 +837,7 @@ const secCert = () => certOf(state.section);
 const secChapters = () => state.chapters.filter(c => secOf(c.id) === state.section);
 const secQuestions = () => state.questions.filter(q => secOf(q.chapter_id) === state.section);
 // « revision » : fiches « Révision CCSP » (js/revision.js), sans questions ; visible dès que le Study Guide CCSP est chargé.
-const hasSection = sec => sec === "improve" ? state.questions.length > 0 : sec === "revision" ? state.chapters.some(c => c.id > 200 && c.id < 300) : state.chapters.some(c => secOf(c.id) === sec);
+const hasSection = sec => (sec === "improve" || sec === "search") ? state.questions.length > 0 : sec === "revision" ? state.chapters.some(c => c.id > 200 && c.id < 300) : state.chapters.some(c => secOf(c.id) === sec);
 const hasCcsp = () => hasSection("ccsp-guide") || hasSection("ccsp-practice");
 /** Nom d'un domaine, selon la certification (8 domaines CISSP, 6 domaines CCSP). */
 const domainName = (d, cert = secCert()) => t((cert === "ccsp" ? "ccspDomain." : "domain.") + d);
@@ -835,6 +853,23 @@ function chLabel(id) {
   const c = chById(id);
   return c && c.domain ? `PT_D${c.domain}` : `TEST_${id - 108}`;
 }
+/** Identifiant unique et stable d'une question, calculé depuis (chapitre, numéro) : jamais stocké, donc identique
+ *  sur le site, dans l'APK, hors ligne et dans toutes les copies de la base.
+ *  BK_xxxx = question issue d'un livre : 0001-0420 Study Guide (CH_01-21), 1001-2560 Official Practice Tests (101-112),
+ *            3001-3200 CCSP Study Guide (201-210), 4001-5040 CCSP Practice Tests (301-308).
+ *  CL_xxxxx = question rédigée par Claude : 1xxxx Last Mile (401-408), 2xxxx Examen blanc ISC2 (501-508). */
+function qRef(q) {
+  const c = q.chapter_id, n = q.number;
+  const bk = v => "BK_" + String(v).padStart(4, "0"), cl = v => "CL_" + String(v).padStart(5, "0");
+  if (c > 500) return cl(20000 + (c - 501) * 100 + n);
+  if (c > 400) return cl(10000 + (c - 401) * 100 + n);
+  if (c > 300) return bk(4000 + (c - 301) * 130 + n);
+  if (c > 200) return bk(3000 + (c - 201) * 20 + n);
+  if (c > 100) return bk(1000 + (c - 101) * 130 + n);
+  return bk((c - 1) * 20 + n);
+}
+const qSrc = q => (q.chapter_id > 400 ? "CL" : "BK");
+const refTag = q => `<span class="qref mono" title="${esc(getLang() === "fr" ? (qSrc(q) === "BK" ? "Identifiant de la question (issue du livre)" : "Identifiant de la question") : (qSrc(q) === "BK" ? "Question ID (from the book)" : "Question ID"))}">${qRef(q)}</span>`;
 function setSection(sec) {
   if (!hasSection(sec)) sec = certOf(sec) === "ccsp" ? (hasSection("ccsp-guide") ? "ccsp-guide" : "ccsp-practice") : DEF_SEC;
   state.section = sec;
@@ -862,7 +897,9 @@ function errorPanel(title, msg, hint) {
 }
 
 // Numéro de version affiché discrètement à côté du logo (même numéro que l'APK : à changer à chaque version).
-const APP_VERSION = "3.27";
+const ESL_KEY = "ccsp-esl";
+const eslOn = () => { try { return localStorage.getItem(ESL_KEY) === "1"; } catch { return false; } };
+const APP_VERSION = "3.28";
 function renderVersion() {
   if (document.getElementById("app-ver")) return;
   const brand = document.querySelector(".brand"); if (!brand) return;
@@ -1104,7 +1141,8 @@ function tvConnect(code, auto = false) {
   const fr = getLang() === "fr";
   const link = tvChannel(code, m => {
     if (!tv || tv.link !== link) return;
-    if (m.t === "done") { if (tvDoneCb) tvDoneCb(m); return; }
+    if (m.t === "busy") { tvBusy(m.n); return; }
+    if (m.t === "done") { if (tvWait && tvWait.n === m.n) { clearTimeout(tvWait.t); tvWait = null; } if (tvDoneCb) tvDoneCb(m); return; }
     if (m.t === "pick" || m.t === "check" || m.t === "listening") { tvRemoteAnswer(m); return; }
     if (m.t === "here") {   // la télé répond (ou vient de s'ouvrir)
       const first = !tv.ok; tv.ok = true; tvSave(code); renderTvBtn();
@@ -1134,7 +1172,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 function tvDisconnect(silent) {
   if (!tv) return;
   try { tv.link.send({ t: "bye" }); } catch { /* ignore */ }
-  const l = tv.link; tv = null; setTimeout(() => l.close(), 500);
+  const l = tv.link; tv = null; setTimeout(() => l.close(), 500); tvHoldScreen(false);
   renderTvBtn();
   if (!silent) toast(getLang() === "fr" ? "📺 Télé déconnectée" : "📺 TV disconnected", "info");
 }
@@ -1142,17 +1180,38 @@ function tvDisconnect(silent) {
 let tvRev = null;   // fiche ouverte sur le téléphone : { sec, r, pane, lang }
 /** Fiche (Révision, Résumé Last Mile, Livre) ouverte ou changée sur le téléphone : on l'affiche aussi sur la télé. */
 function tvSheet(sec, r, pane, lang) { tvRev = r ? { sec, r, pane, lang } : null; tvSync(); }
+/** « Lire tout le domaine » avec la télé connectée : tout le domaine (Last Mile puis chapitres, volet « Tout ») est
+ *  envoyé à la télé comme une seule fiche, et c'est elle qui le lit (le téléphone reste muet). */
+function tvDomain(sec, dom, rs, lang) { tvRev = { sec, dom, rs, lang }; tvSync(); }
+let tvHold = false;
+function tvHoldScreen(on) {
+  if (on === tvHold || !nativeTTS || typeof nativeTTS.keepScreen !== "function") return;
+  tvHold = on; try { nativeTTS.keepScreen(on); } catch { /* ignore */ }
+}
 function tvSync() {
-  if (!tv || !tv.ok) return;
+  if (!tv || !tv.ok) { tvHoldScreen(false); return; }
+  tvHoldScreen(state.view === "quiz");   // téléphone en veille = quiz figé et télé muette : on garde l'écran allumé
   const z = state.quiz;
+  if (state.view === "home" && tvRev && tvRev.sec === state.section && tvRev.dom) {
+    const { sec, dom, rs, lang } = tvRev;
+    // « # titre affiché\ttexte annoncé » : en-tête de chaque fiche (Last Mile du domaine, puis chaque chapitre)
+    const head = r => `${chLabel(r.id)} · ${chTitle(chById(r.id)) || ""}` + "\t" + revSpeech(r, "all", lang);
+    tv.link.send({
+      t: "sheet", ui: getLang(), lang, key: sec + ":D" + dom + ":all:" + lang,
+      kicker: t("rev.tab"), title: `D${dom} · ${t("ccspDomain." + dom, {}, lang)}`, pane: t("rev.readDomain", {}, lang),
+      head: joinSpeech([(lang === "fr" ? "Domaine " : "Domain ") + dom, t("ccspDomain." + dom, {}, lang)]),
+      kind: "mixed", lines: rs.flatMap(r => { const ls = revLines(r, "all", lang); return ls.length ? ["# " + head(r), ...ls] : []; }),
+    });
+    return;
+  }
   if (state.view === "home" && tvRev && tvRev.sec === state.section) {
     const { sec, r, pane, lang } = tvRev, c = chById(r.id);
     tv.link.send({
       t: "sheet", ui: getLang(), lang, key: sec + ":" + r.id + ":" + pane + ":" + lang,
       kicker: t("rev.tab"),
       title: `${chLabel(r.id)} · ${chTitle(c) || ""}`,
-      pane: t("rev.pane." + pane, {}, lang), head: revSpeech(r, pane, lang),
-      kind: ["sum", "book"].includes(pane) ? "mixed" : "list", lines: revLines(r, pane, lang),
+      pane: paneTitle(pane, lang), head: revSpeech(r, pane, lang),
+      kind: ["sum", "audio", "bsum", "bess", "all"].includes(pane) ? "mixed" : "list", lines: revLines(r, pane, lang),
     });
     return;
   }
@@ -1165,7 +1224,11 @@ function tvSync() {
     multi: !!q.multi, picks, checked, correct: checked ? q.correct : [], explanation: checked ? txt.explanation : "",
     ok: checked && sameSet(picks, q.correct),
   });
+  // télé : chaque nouvelle question est lue toute seule (question + propositions), si le son est activé
+  const key = z.label() + ":" + z.questions.length + ":" + z.i + ":" + showLang;
+  if (!checked && tvAutoQ !== key && autoRead() && !speedActive(z)) { tvAutoQ = key; const i = z.i; setTimeout(() => { if (state.quiz === z && z.i === i && state.view === "quiz" && !z.checked[i]) tvSpeak("question"); }, 400); }
 }
+let tvAutoQ = null;
 /** Réponse donnée sur la télé (télécommande ou voix) : appliquée au quiz du téléphone comme un toucher. */
 function tvRemoteAnswer(m) {
   const z = state.quiz; if (state.view !== "quiz" || !z || z.i + 1 !== m.n || z.checked[z.i]) return;
@@ -1181,7 +1244,7 @@ function tvRemoteAnswer(m) {
   if (!q.multi && z.feedback && !speedActive(z) && !z.checked[z.i]) check();   // (en Speed, toggle valide déjà)
 }
 /** Lecture sur la télé à la place du téléphone (« question », « all » ou « answer »). */
-function tvSpeak(mode) { if (tv && tv.ok) tv.link.send({ t: "speak", mode }); }
+function tvSpeak(mode) { if (tv && tv.ok) tv.link.send({ t: "speak", mode, n: state.quiz ? state.quiz.i + 1 : 0 }); }
 
 // ---- côté télé
 let tvLast = null;
@@ -1217,6 +1280,8 @@ function renderTv() {
         if (!(tvLast && tvLast.t === "sheet" && tvLast.key === m.key)) stopSpeak();
         tvLast = m; tvRender(); return;
       }
+      // une demande de lecture qui vise une autre question que celle affichée (message en retard) est ignorée
+      if (m.t === "speak" && tvLast && tvLast.t === "q" && m.n && m.mode !== "sheet" && m.n !== tvLast.n) return;
       if (m.t === "speak" && tvLast && (tvLast.t === "q" || tvLast.t === "sheet")) tvRead(m.mode);
     });
     if (!link) return errorPanel(t("err.title"), "Supabase", "");
@@ -1236,7 +1301,9 @@ function tvRender() {
       const flush = () => { if (list.length) { body += `<ul class="rev-list">${list.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`; list = []; } };
       for (const l of m.lines) {
         if (l.startsWith("- ")) { list.push(l.slice(2)); continue; }
-        flush(); body += l.startsWith("## ") ? `<h4>${esc(l.slice(3))}</h4>` : `<p>${esc(l)}</p>`;
+        flush();
+        if (l.startsWith("# ")) { const [show, say] = l.slice(2).split("\t"); body += `<h3 class="tv-sheet-sec" data-say="${esc(say || show)}">${esc(show)}</h3>`; continue; }
+        body += l.startsWith("## ") ? `<h4>${esc(l.slice(3))}</h4>` : `<p>${esc(l)}</p>`;
       }
       flush();
     }
@@ -1303,7 +1370,7 @@ function tvAnswer(msg) {
   tv.link.send({ ...msg, n: m.n });
 }
 if (IS_TV) document.addEventListener("keydown", e => {
-  const m = tvLast; if (!m || m.t !== "q" || m.checked) return;
+  const m = tvLast; if (!m || m.t !== "q" || m.checked || e.repeat) return;   // touche maintenue : pas de choix répétés
   const opts = [...app.querySelectorAll(".tv-quiz .opt[data-letter]")]; if (!opts.length) return;
   const cur = opts.indexOf(document.activeElement);
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -1313,8 +1380,27 @@ if (IS_TV) document.addEventListener("keydown", e => {
     nx.focus({ preventScroll: false }); if (nx.dataset.letter) tvFocusL = nx.dataset.letter;
     e.preventDefault(); return;
   }
-  if ((e.key === "Enter" || e.key === " ") && cur >= 0) { e.preventDefault(); tvFocusL = opts[cur].dataset.letter; tvAnswer({ t: "pick", L: tvFocusL }); return; }
-  if (/^[1-6]$/.test(e.key) && opts[+e.key - 1]) { e.preventDefault(); tvAnswer({ t: "pick", L: opts[+e.key - 1].dataset.letter }); }
+  // touche OK de la télécommande : selon les télés, « Enter », « Select » ou le code 23 (DPAD_CENTER) sans nom de touche
+  const ok = ["Enter", " ", "Select", "NumpadEnter"].includes(e.key) || [13, 23, 66].includes(e.keyCode);
+  if (ok && !["tv-check", "tv-mic"].includes(document.activeElement && document.activeElement.id)) {
+    // focus perdu (écran redessiné pendant la lecture) : on prend la dernière proposition choisie, sinon la première
+    const o = cur >= 0 ? opts[cur] : (tvFocusL && opts.find(x => x.dataset.letter === tvFocusL)) || opts[0];
+    e.preventDefault(); tvOkAt = Date.now(); tvFocusL = o.dataset.letter; o.focus({ preventScroll: true }); tvPick(tvFocusL); return;
+  }
+  if (/^[1-6]$/.test(e.key) && opts[+e.key - 1]) { e.preventDefault(); tvPick(opts[+e.key - 1].dataset.letter); }
+});
+/** Choix envoyé au téléphone ; un même choix reçu deux fois de suite (touche + clic) n'est envoyé qu'une fois. */
+let tvPickLast = { L: "", at: 0 }, tvOkAt = 0;
+function tvPick(L) {
+  const now = Date.now(); if (tvPickLast.L === L && now - tvPickLast.at < 600) return;
+  tvPickLast = { L, at: now }; tvAnswer({ t: "pick", L });
+}
+// clic sur une proposition (certaines télécommandes envoient un clic au lieu de la touche OK)
+if (IS_TV) document.addEventListener("click", e => {
+  const o = e.target.closest && e.target.closest(".tv-quiz .opt[data-letter]"); if (!o) return;
+  // la touche OK a déjà choisi : le clic que la télé fabrique au relâchement (parfois bien après) ne doit pas décocher
+  if (Date.now() - tvOkAt < 2000) return;
+  tvFocusL = o.dataset.letter; tvPick(tvFocusL);
 });
 /** Lettres et « valider » reconnus dans ce qui a été dit (« réponse C », « B », « la deuxième », « A et C »…). */
 function tvParseVoice(list, nOpt) {
@@ -1368,7 +1454,7 @@ function tvRead(mode) {
   if (player) stopSpeak();
   if (m.t === "sheet") {
     const pane = app.querySelector(".tv-sheet .rev-pane"); if (!pane) return;
-    speakUnits("tv:" + m.key, speechUnits([m.head, ...[...pane.querySelectorAll("h4, p, li")].map(el => ({ el }))], m.lang), m.lang, btn);
+    speakUnits("tv:" + m.key, speechUnits([...(m.head ? [m.head] : []), ...[...pane.querySelectorAll("h3, h4, p, li")].map(el => el.dataset.say ? { el, say: el.dataset.say } : { el })], m.lang), m.lang, btn);
     return;
   }
   if (m.t !== "q") return;
@@ -1381,6 +1467,8 @@ function tvRead(mode) {
   speakUnits("tv:" + n + ":" + mode, speechUnits(quizParts({ correct: m.correct }, box, m.lang, mode), m.lang), m.lang, btn, done);
 }
 let tvReadTok = 0;
+// télé : tant qu'elle lit une question, elle le signale au téléphone toutes les 2 s (il attend la fin avant de continuer)
+if (IS_TV) setInterval(() => { if (tv && player && tvLast && tvLast.t === "q") tv.link.send({ t: "busy", n: tvLast.n }); }, 2000);
 
 // ------------------------------------------------------------------ Android Auto
 /* L'appli prépare le contenu à écouter en voiture (fiches et quiz audio) dans la langue de l'appli ;
@@ -1407,29 +1495,59 @@ function autoGroups(lang) {
     const lines = (r, panes, L = lang) => panes.flatMap(p => ["§ " + t("rev.pane." + p, {}, L) + ".", ...revLines(r, p, L).map(clean)]);
     const groups = [];
     const chTitle = id => { const c = chById(id); return c ? (fr && c.title_fr ? c.title_fr : c.title) : ""; };
-    groups.push({ title: t("rev.tab", {}, lang), subtitle: REVISION.length + (fr ? " chapitres" : " chapters"),
-      items: REVISION.map(r => ({ key: "rev-" + r.id + "-" + lang, title: (fr ? "Chapitre " : "Chapter ") + (r.id - 200) + " · " + chTitle(r.id), subtitle: t("rev.tab", {}, lang),
-        lang, parts: lines(r, REV_PANES) })) });
+    // Révision + Livre CCSP fusionnés (comme sur le site, 11.3) : un seul élément par chapitre, qui lit la fiche
+    // (version audio si elle existe, sinon Résumé / Préparer l'examen / À mémoriser) puis le texte du livre
+    // (Summary et Exam Essentials, en français s'il est traduit).
+    const bookLang = id => { const n = (state.notes && state.notes.get(id)) || {}; return lang === "fr" && !(n.summary_fr && n.summary_fr.length) ? "en" : lang; };
+    const bookLines = id => hasBook(id) && bookLang(id) === lang
+      ? BOOK_PANES.flatMap(p => { const ls = revLines({ id }, p, lang); return ls.length ? ["§ " + noEmoji(paneTitle(p, lang)) + ".", ...ls.map(clean)] : []; }) : [];
+    // Révision CCSP par domaine (3.28) : une seule liste, domaine par domaine, chaque chapitre (fiche ou version audio,
+    // puis livre). La voiture enchaîne les éléments : tout un domaine se lit à la file, puis le suivant.
+    const chItem = r => { const au = r.audio && r.audio[lang], bk = bookLines(r.id);
+      return { key: "revbook-" + r.id + "-" + lang + (au ? "-audio" : "") + (bk.length ? "-book" : ""), title: chLabel(r.id).replace("CCSP ", "") + " · " + chTitle(r.id),
+        subtitle: "D" + ((chById(r.id) || {}).domain || "") + " · " + (fr ? "fiche" : "sheet") + (bk.length ? (fr ? " + livre" : " + book") : ""), lang,
+        // le nom complet du chapitre est annoncé au début de la lecture
+        parts: [(fr ? "Chapitre " : "Chapter ") + (r.id - 200) + ", " + chTitle(r.id) + ".", ...(au ? lines(r, ["audio"]) : lines(r, REV_PANES)), ...bk] }; };
+    groups.push({ title: t("rev.tabAll", {}, lang), subtitle: fr ? "6 domaines · chapitres" : "6 domains · chapters",
+      items: CCSP_DOMS.flatMap(d => REVISION.filter(r => (chById(r.id) || {}).domain === d).map(chItem)) });
+    // Chapitres du livre dont le texte n'existe pas dans la langue de l'appli (ex. pas encore traduit) : liste à part, en anglais.
+    if (state.notes && state.notes.size) {
+      const ids = [...state.notes.keys()].sort((a, b) => a - b).filter(id => bookLang(id) !== lang || !REVISION.some(r => r.id === id));
+      if (ids.length) groups.push({ title: fr ? "Livre CCSP" : "CCSP Book", subtitle: ids.length + (fr ? " chapitres" : " chapters"),
+        items: ids.map(id => { const L = bookLang(id);
+          return { key: "book-" + id + "-" + L, title: (L === "fr" ? "Chapitre " : "Chapter ") + (id - 200) + " · " + chTitle(id), subtitle: fr ? "Livre CCSP" : "CCSP Book",
+            lang: L, parts: lines({ id }, BOOK_PANES, L) }; }) });
+    }
     // Quiz audio : question et propositions, un temps de réflexion, puis la bonne réponse et l'explication.
     const quizItem = (q, k) => {
       const x = qText(q, lang), Lq = x.lang, f = Lq === "fr";
       const opts = (x.options || []).map((o, i) => String.fromCharCode(65 + i) + (f ? " : " : ": ") + o);
       const ok = q.correct.map(L => L + (f ? " : " : ": ") + ((x.options || [])[L.charCodeAt(0) - 65] || ""));
       const head = f ? (q.correct.length > 1 ? "Bonnes réponses" : "Bonne réponse") : (q.correct.length > 1 ? "Correct answers" : "Correct answer");
-      return { key: "q-" + q.id + "-" + Lq, title: "Question " + (k + 1), subtitle: chTitle(q.chapter_id) || "", lang: Lq,
-        parts: [x.scenario || "", x.question || "", ...opts, AUTO_PAUSE, head + ".", ...ok, x.explanation || ""] };
+      return { key: "q-" + q.id + "-" + Lq, title: "Question " + (k + 1) + " · " + qRef(q), subtitle: chTitle(q.chapter_id) || "", lang: Lq,
+        parts: [x.scenario || "", x.question || "", ...opts, AUTO_PAUSE, head + ".", ...ok, x.explanation || ""],
+        // réponse possible à l'écran de la voiture (boutons A-D) pendant la lecture et le temps de réflexion
+        ...(q.correct.length === 1 && (x.options || []).length <= 4 ? { quiz: { a: q.correct[0], n: (x.options || []).length } } : {}) };
     };
     const pool = qs => (fr ? [...qs.filter(hasFr), ...qs.filter(q => !hasFr(q))] : qs);
     const pick = (qs, n) => { const a = [...qs]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a.slice(0, n); };
     const own = s => state.questions.filter(q => secOf(q.chapter_id) === s);
+    // Quiz en mode apprentissage, un par domaine (jamais de quiz mélangé) : un dossier par section de l'appli
+    // (champ « folder »), qui contient un quiz par domaine ; puis « Mes erreurs », aussi rangé par domaine.
+    const domOf = q => { const c = chById(q.chapter_id); return c ? c.domain : null; };
+    const PER_DOMAIN = 50;
+    const byDomain = (qs, folder, n) => CCSP_DOMS.forEach(d => {
+      let dq = qs.filter(q => domOf(q) === d);
+      if (!dq.length) return;
+      // en français : d'abord les questions traduites, complétées si besoin par des questions en anglais
+      const tr = fr ? pick(dq.filter(hasFr), n) : pick(dq, n);
+      const items = [...tr, ...(fr ? pick(dq.filter(q => !hasFr(q)), n - tr.length) : [])].map(quizItem);
+      groups.push({ folder, title: "D" + d + " · " + t("ccspDomain." + d, {}, lang),
+        subtitle: items.length + (fr ? " questions, réponse à l'écran" : " questions, answer on screen"), items });
+    });
+    for (const [sec, nf, ne] of [["ccsp-guide", "CCSP Study Guide", "CCSP Study Guide"], ["ccsp-practice", "CCSP Practice", "CCSP Practice"]]) byDomain(own(sec), (fr ? "Quiz · " + nf : "Quiz · " + ne), PER_DOMAIN);
     const wrong = mistakes();
-    if (wrong.length) groups.push({ title: fr ? "Quiz audio · Mes erreurs" : "Audio quiz · My mistakes",
-      subtitle: Math.min(wrong.length, 60) + " questions", items: pick(pool(wrong), 60).map(quizItem) });
-    for (const [sec, name] of [["ccsp-guide", "CCSP Study Guide"], ["ccsp-practice", "CCSP Practice"]]) {
-      const cs = own(sec); if (!cs.length) continue;
-      groups.push({ title: (fr ? "Quiz audio · " : "Audio quiz · ") + name,
-        subtitle: fr ? "40 questions au hasard" : "40 random questions", items: pick(fr && cs.some(hasFr) ? cs.filter(hasFr) : cs, 40).map(quizItem) });
-    }
+    if (wrong.length) byDomain(wrong, fr ? "Quiz · Mes erreurs" : "Quiz · My mistakes", 60);
     return groups;
   }
 }
@@ -1501,7 +1619,7 @@ async function start() {
     syncExamDate(true);
     // Application Android : tout est téléchargé automatiquement pour pouvoir réviser hors ligne.
     if (IN_APP && state.store.kind === "supabase" && !state.store.offline && !offlineEnabled()) {
-      state.store.downloadOffline({ chapters, questions })
+      state.store.downloadOffline({ chapters, questions, notes: notes || [] })
         .then(() => { toast(t("off.done", { n: questions.length }), "ok"); if (state.view === "home") renderHome(); })
         .catch(e => { console.error(e); toast(t("off.fail") + (e.message || e), "err"); });
     }
@@ -1533,7 +1651,7 @@ async function backOnline() {
 async function downloadOffline(btn) {
   btn.disabled = true; btn.textContent = t("off.downloading");
   try {
-    await state.store.downloadOffline({ chapters: state.chapters, questions: state.questions });
+    await state.store.downloadOffline({ chapters: state.chapters, questions: state.questions, notes: [...state.notes.values()] });
     const sw = IN_APP || await registerSW();
     toast(sw ? t("off.done", { n: state.questions.length }) : t("off.doneNoSW"), "ok");
   } catch (e) { console.error(e); toast(t("off.fail") + (e.message || e), "err"); }
@@ -1553,7 +1671,7 @@ async function toggleAutonomous(btn) {
   btn.disabled = true;
   try {
     if (!state.store.offline) {   // copie fraîche avant de partir
-      await state.store.downloadOffline({ chapters: state.chapters, questions: state.questions });
+      await state.store.downloadOffline({ chapters: state.chapters, questions: state.questions, notes: [...state.notes.values()] });
     } else if (!offlineEnabled()) throw new Error(t("auto.needDownload"));
     setAutonomous(true);
     location.reload();
@@ -1761,8 +1879,9 @@ function savedPanel() {
 /** Une seule rangée d'onglets : CCSP Study Guide / CCSP Practice / Révision CCSP
  *  (seulement ceux qui ont du contenu). Le chiffre est le nombre de questions (de fiches pour la révision). */
 function secTabs(sec) {
-  const nIn = s => s === "improve" ? mistakes().length : s === "revision" ? REVISION.length : state.questions.filter(q => secOf(q.chapter_id) === s).length;
-  const SEC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice", revision: t("rev.tab"), improve: getLang() === "fr" ? "Axes d'amélioration" : "Improvement areas" };
+  const nIn = s => s === "search" ? state.questions.length : s === "improve" ? mistakes().length : s === "revision" ? CCSP_DOMS.length : state.questions.filter(q => secOf(q.chapter_id) === s).length;
+  const SEC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice", revision: t("rev.tabAll"), improve: getLang() === "fr" ? "Axes d'amélioration" : "Improvement areas",
+    search: getLang() === "fr" ? "🔎 Rechercher" : "🔎 Search" };
   const secs = Object.keys(SEC_NAMES).filter(hasSection);
   return secs.length > 1 ? `
     <div class="seg sec-tabs" role="group" aria-label="${esc(t("sec.label"))}">
@@ -1847,7 +1966,7 @@ function renderImprove() {
         <span class="muted small">${esc(chTitle(c))} · ${esc(IMP_PANE[x.pane][lang])}</span><br><span class="imp-read-txt">${esc(impLineText(x, lang))}</span></li>`;
     }).join("");
     return `<details class="imp-q" data-impq="${q.id}">
-      <summary><span class="mono muted small">${esc(chLabel(q.chapter_id))}</span> ${esc(String(tx.question).slice(0, 160))}${String(tx.question).length > 160 ? "…" : ""}</summary>
+      <summary><span class="mono muted small">${esc(chLabel(q.chapter_id))}</span> ${refTag(q)} ${esc(String(tx.question).slice(0, 160))}${String(tx.question).length > 160 ? "…" : ""}</summary>
       <div class="imp-body">
         ${impCanSpeak() ? `<div class="row"><button class="btn btn-ghost btn-xs btn-speak" data-imp-speak="${q.id}" lang="${lang}">🔊 ${fr ? "Lire" : "Listen"}</button></div>` : ""}
         ${tx.scenario ? `<p class="muted imp-scen">${esc(tx.scenario)}</p>` : ""}
@@ -1929,22 +2048,29 @@ function renderImprove() {
 
 /* ---- Onglet « Révision CCSP » : une fiche par chapitre du Study Guide (résumé, préparer l'examen, à mémoriser),
    avec « Listen » (lecture en anglais) et, quand le site est en français, « Lire » (lecture en français). */
-const REV_PANES = ["sum", "book", "tips", "mem"];
-/** Volet « Livre » : Summary + Exam Essentials du Study Guide (texte exact en anglais, table ccsp_book_notes). */
-function revBook(r, lang) {
-  const n = state.notes && state.notes.get(r.id);
-  if (!n) return null;
-  const pick = (en, fr) => (lang === "fr" && fr && fr.length ? fr : en) || [];
-  return ["## Summary", ...pick(n.summary, n.summary_fr), "## Exam Essentials", ...pick(n.essentials, n.essentials_fr)];
+const REV_PANES = ["sum", "tips", "mem"];
+const BOOK_PANES = ["bsum", "bess"];   // onglet « Livre CCSP » : Summary / Exam Essentials (texte exact du livre)
+const revOpen = new Map();   // "section:chapitre" -> volet affiché
+/** Lignes d'un volet : fiche (revision.js) ou texte du livre (state.notes, version FR si elle existe). */
+function revLines(r, pane, lang) {
+  if (pane === "all") return allPanes(r, lang).flatMap(p => {
+    const mixed = ["sum", "audio", "bsum", "bess"].includes(p), ls = revLines(r, p, lang);
+    return ls.length ? ["## " + paneTitle(p, lang), ...(mixed ? ls : ls.map(x => "- " + x))] : [];
+  });
+  if (pane === "bsum" || pane === "bess") {
+    const n = state.notes.get(r.id) || {};
+    const en = pane === "bsum" ? n.summary : n.essentials, fr = pane === "bsum" ? n.summary_fr : n.essentials_fr;
+    return (lang === "fr" && fr && fr.length ? fr : en) || [];
+  }
+  const v = r[pane] || {};
+  return v[lang] || v.fr || v.en || [];
 }
-const revLines = (r, pane, lang) => pane === "sum" ? r.sum[lang] : pane === "book" ? (revBook(r, lang) || [t("rev.bookNone")]) : r[pane][lang];
-const revOpen = new Map();   // chapitre -> volet affiché
 /** En-tête lu avant la fiche (« Chapitre n. Titre. Volet. ») ; le texte lui-même est lu depuis la page. */
 /** Ce que la voix dit pour annoncer un volet (pas le libellé du bouton : ni émoji, ni « Tout le chapitre », ni « Livre : Summary »).
  *  Vide = rien d'annoncé (le Résumé vient juste après le titre du chapitre). */
 const PANE_SAY = {
-  fr: { sum: "", all: "", audio: "", tips: "Pour préparer l'examen.", mem: "À retenir.", book: "Extrait du livre.", bsum: "Le résumé du livre.", bess: "L'essentiel du livre pour l'examen." },
-  en: { sum: "", all: "", audio: "", tips: "Preparing for the exam.", mem: "Key points to remember.", book: "From the book.", bsum: "The book's summary.", bess: "The book's study essentials." },
+  fr: { sum: "", all: "", audio: "", tips: "Pour préparer l'examen.", mem: "À retenir.", book: "Le résumé du livre.", bsum: "Le résumé du livre.", bess: "L'essentiel du livre pour l'examen." },
+  en: { sum: "", all: "", audio: "", tips: "Preparing for the exam.", mem: "Key points to remember.", book: "The book's summary.", bsum: "The book's summary.", bess: "The book's exam essentials." },
 };
 const paneSay = (p, l) => { const m = PANE_SAY[l === "fr" ? "fr" : "en"]; return p in m ? m[p] : null; };
 /** En-tête lu avant la fiche, surligné à l'écran comme le reste : le titre de la carte (« CH_13 Gestion… »)
@@ -1953,16 +2079,25 @@ function revIntro(d, r, pane, l) {
   const title = d.querySelector("summary .ch-title"), btn = d.querySelector(`[data-revpane="${pane}"]`);
   if (l !== getLang() || !title || !title.textContent.trim()) return [revSpeech(r, pane, l)];
   const say = paneSay(pane, l);
-  return [{ el: title, prefix: (l === "fr" ? "Chapitre " : "Chapter ") + (r.id - 200) + "." },
-    say === null ? t("rev.pane." + pane, {}, l) : btn ? { el: btn, say } : say];
+  return [{ el: title, prefix: (r.lms ? (l === "fr" ? "Domaine " : "Domain ") : (l === "fr" ? "Chapitre " : "Chapter ")) + (r.lms ? r.id : r.id - 200) + "." },
+    say === null ? paneTitle(pane, l) : btn ? { el: btn, say } : say];
 }
 function revSpeech(r, pane, lang) {
+  if (r.lms) { const say = paneSay(pane, lang); return joinSpeech([(lang === "fr" ? "Domaine " : "Domain ") + r.id, t("domain." + r.id, {}, lang), say === null ? t("rev.pane." + pane, {}, lang) : say]); }
   const c = chById(r.id), title = c ? (lang === "fr" && c.title_fr ? c.title_fr : c.title) : "";
-  const say = paneSay(pane, lang), head = say === null ? t("rev.pane." + pane, {}, lang) : say;
+  const say = paneSay(pane, lang), head = say === null ? paneTitle(pane, lang) : say;
   return joinSpeech([(lang === "fr" ? "Chapitre " : "Chapter ") + (r.id - 200), title, head]);
 }
+/** Volets d'un chapitre de la Révision fusionnée : fiche (Résumé, Préparer l'examen, À mémoriser), puis texte du livre. */
+const hasBook = id => !!(state.notes && state.notes.get(id));
+const allPanes = (r, lang) => [...REV_PANES, ...(!r.lms && hasBook(r.id) ? BOOK_PANES : [])];
+const paneTitle = (p, lang) => t(BOOK_PANES.includes(p) ? "rev.pane.book." + p : "rev.pane." + p, {}, lang);
 function revPaneHtml(r, pane, lang) {
-  if (pane === "sum" || pane === "book") {
+  if (pane === "all") return allPanes(r, lang).map(p => {
+    const inner = revPaneHtml(r, p, lang);
+    return inner.replace(/<[^>]+>/g, "").trim() ? `<h3 class="rev-part${BOOK_PANES.includes(p) ? " rev-part-book" : ""}" data-say="${esc(paneSay(p, lang) ?? "")}">${esc(paneTitle(p, lang))}</h3>${inner}` : "";
+  }).join("");
+  if (pane === "sum" || pane === "audio" || pane === "bsum" || pane === "bess") {
     // Lignes « ## » = sous-titre, « - » = puce (regroupées en liste), sinon paragraphe.
     let html = "", list = [];
     const flush = () => { if (list.length) { html += `<ul class="rev-list">${list.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`; list = []; } };
@@ -1974,79 +2109,108 @@ function revPaneHtml(r, pane, lang) {
     flush();
     return html;
   }
-  return `<ul class="rev-list">${r[pane][lang].map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
+  return `<ul class="rev-list">${revLines(r, pane, lang).map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
 }
+/* Révision CCSP par domaine (11.4) : pour chacun des 8 domaines, la fiche Résumé Last Mile du domaine, puis ses chapitres
+   à la file (fiche de révision + texte du livre). Remplace les onglets « Résumé Last Mile » et « Révision + Livre CCSP ».
+   « Lire tout le domaine » enchaîne toutes les fiches du domaine (volet « Tout » de chacune). */
+const revKey = r => "revision:" + (r.lms ? "L" : "") + r.id;
 function renderRevision() {
-  const lang = getLang(), sec = "revision";
+  const sec = "revision", lang = getLang();
+  const LMS = [];   // (CISSP : fiches Last Mile ; pas d'équivalent CCSP)
+  const itemOf = d => { const v = d.dataset.rev; return v[0] === "L" ? LMS.find(x => x.id === +v.slice(1)) : REVISION.find(x => x.id === +v); };
+  const panesOf = r => [...REV_PANES, ...(r.audio && r.audio[lang] ? ["audio"] : []), ...(!r.lms && hasBook(r.id) ? BOOK_PANES : []), "all"];
+  const paneOf = r => { const P = panesOf(r), p = revOpen.get(revKey(r)); return P.includes(p) ? p : P[0]; };
+  const paneBtn = (p, pane, r) => `<button class="seg-btn${BOOK_PANES.includes(p) ? " seg-book" : ""}" data-revpane="${p}" aria-pressed="${p === pane}">${esc(p === "all" && r.lms ? t("rev.pane.allLms") : paneTitle(p, lang))}</button>`;
+  const speakBtns = (attr, fr, en) => `
+    ${canSpeak && !(lang === "fr" && canSpeakFr) ? `<button class="btn btn-ghost btn-xs btn-speak" ${attr}="en" lang="en" title="${esc(en)}">🔊 Listen</button>` : ""}
+    ${canSpeakFr && lang === "fr" ? `<button class="btn btn-ghost btn-xs btn-speak" ${attr}="fr" lang="fr" title="${esc(fr)}">🔊 Lire</button>` : ""}`;
   const card = r => {
-    const c = chById(r.id), pane = revOpen.get(r.id) || "sum";
+    const pane = paneOf(r), c = r.lms ? null : chById(r.id);
     return `
-    <details class="rev-card" data-rev="${r.id}" ${revOpen.has(r.id) ? "open" : ""}>
-      <summary><span class="ch-num mono">${chLabel(r.id)}</span> <span class="ch-title">${esc(chTitle(c) || "")}</span></summary>
+    <details class="rev-card${r.lms ? " rev-card-lms" : ""}" data-rev="${r.lms ? "L" : ""}${r.id}" ${revOpen.has(revKey(r)) ? "open" : ""}>
+      <summary>${r.lms ? `<span class="ch-num mono">Last Mile</span> <span class="ch-title">${esc(domainName(r.id, "ccsp"))}</span>`
+        : `<span class="ch-num mono">${chLabel(r.id)}</span> <span class="ch-title">${esc(chTitle(c) || "")}</span>`}</summary>
       <div class="rev-body">
         <div class="rev-tools">
-          <div class="seg rev-panes" role="group">
-            ${REV_PANES.map(p => `<button class="seg-btn" data-revpane="${p}" aria-pressed="${p === pane}">${esc(t("rev.pane." + p))}</button>`).join("")}
-          </div>
-          <div class="row rev-speak">
-            ${canSpeak && !(lang === "fr" && canSpeakFr) ? `<button class="btn btn-ghost btn-xs btn-speak" data-revspeak="en" lang="en" title="Read this sheet aloud in English (click again to stop)">🔊 Listen</button>` : ""}
-            ${canSpeakFr && lang === "fr" ? `<button class="btn btn-ghost btn-xs btn-speak" data-revspeak="fr" lang="fr" title="Lire cette fiche en français (cliquer à nouveau pour arrêter)">🔊 Lire</button>` : ""}
-          </div>
+          <div class="seg rev-panes" role="group">${panesOf(r).map(p => paneBtn(p, pane, r)).join("")}</div>
+          <div class="row rev-speak">${speakBtns("data-revspeak", "Lire cette fiche en français (cliquer à nouveau pour arrêter)", "Read this sheet aloud in English (click again to stop)")}</div>
         </div>
         <div class="rev-pane">${revPaneHtml(r, pane, lang)}</div>
       </div>
     </details>`;
   };
-  const blocks = [1, 2, 3, 4, 5, 6].map(d => {   // 6 domaines CCSP
-    const rs = REVISION.filter(r => (chById(r.id) || {}).domain === d);
+  const blocks = CCSP_DOMS.map(d => {   // 6 domaines CCSP
+    const rs = [...LMS.filter(r => r.id === d), ...REVISION.filter(r => (chById(r.id) || {}).domain === d)];
     if (!rs.length) return "";
-    return `<section class="domain"><div class="domain-head"><h2><span class="mono accent">D${d}</span> ${esc(domainName(d, "ccsp"))}</h2></div>
+    return `<section class="domain" data-revdom="${d}"><div class="domain-head"><h2><span class="mono accent">D${d}</span> ${esc(domainName(d, "ccsp"))}</h2>
+        <div class="row rev-speak">${speakBtns("data-domspeak", "Lire tout le domaine : chaque chapitre à la suite (cliquer à nouveau pour arrêter)", "Read the whole domain: each chapter in a row (click again to stop)")
+          .replace(/🔊 Lire</, "🔊 " + esc(t("rev.readDomain", {}, "fr")) + "<").replace(/🔊 Listen</, "🔊 " + esc(t("rev.readDomain", {}, "en")) + "<")}</div></div>
       <div class="rev-grid">${rs.map(card).join("")}</div></section>`;
   }).join("");
   app.innerHTML = `
   <div id="offline-slot"></div>
   <section class="hero">
-    <p class="mono kicker">&gt; root@ccsp:~$ ./review --lang=${lang}</p>
+    <p class="mono kicker">&gt; root@ccsp:~$ ./review --by-domain --lang=${lang}</p>
     <h1 class="glitch" data-text="CCSP Review">CCSP Review</h1>
     ${secTabs(sec)}
-    <p class="muted">${esc(t("rev.sub", { n: REVISION.length }))}</p>
+    <p class="muted">${esc(t("rev.subDomains", { n: REVISION.length }))}</p>
     <div class="row"><button class="btn btn-ghost btn-sm" id="rev-open-all">${esc(t("rev.openAll"))}</button>
       <button class="btn btn-ghost btn-sm" id="rev-close-all">${esc(t("rev.closeAll"))}</button></div>
   </section>
   ${blocks}`;
   app.querySelectorAll("[data-section]").forEach(b => b.onclick = () => { stopSpeak(); setSection(b.dataset.section); });
-  const cardEst = d => { const id = +d.dataset.rev, r = REVISION.find(x => x.id === id), pane = revOpen.get(id) || "sum";
-    d.querySelectorAll("[data-revspeak]").forEach(b => setReadEst(b, textSize(revLines(r, pane, b.dataset.revspeak)))); };
+  const setPane = (d, r, pane, l = getLang()) => {
+    revOpen.set(revKey(r), pane);
+    d.querySelectorAll("[data-revpane]").forEach(x => x.setAttribute("aria-pressed", x.dataset.revpane === pane));
+    const box = d.querySelector(".rev-pane"); box.innerHTML = revPaneHtml(r, pane, l);
+    if (l !== getLang()) box.lang = l; else box.removeAttribute("lang");
+  };
+  // temps estimé : fiche = volet affiché ; domaine = « Tout » de chaque fiche du domaine
+  const cardEst = d => { const r = itemOf(d); d.querySelectorAll("[data-revspeak]").forEach(b => setReadEst(b, textSize(revLines(r, paneOf(r), b.dataset.revspeak)))); };
+  app.querySelectorAll(".rev-card").forEach(cardEst);
+  app.querySelectorAll("[data-revdom]").forEach(sect => {
+    const rs = [...sect.querySelectorAll(".rev-card")].map(itemOf);
+    sect.querySelectorAll("[data-domspeak]").forEach(b => setReadEst(b, textSize(rs.flatMap(r => revLines(r, "all", b.dataset.domspeak)))));
+  });
+  const boxParts = d => [...d.querySelectorAll(".rev-pane h3, .rev-pane h4, .rev-pane p, .rev-pane li")].map(el => el.matches("h3[data-say]") ? { el, say: el.dataset.say } : { el });
   app.querySelectorAll(".rev-card").forEach(d => {
-    const id = +d.dataset.rev, r = REVISION.find(x => x.id === id);
-    cardEst(d);
+    const r = itemOf(d);
     d.addEventListener("toggle", () => {
-      if (d.open) { if (!revOpen.has(id)) revOpen.set(id, "sum"); tvSheet(sec, r, revOpen.get(id) || "sum", getLang()); }
-      else { revOpen.delete(id); if (tvRev && tvRev.sec === sec && tvRev.r.id === id) tvSheet(sec, null); }
+      if (d.open) { if (!revOpen.has(revKey(r))) revOpen.set(revKey(r), panesOf(r)[0]); tvSheet(sec, r, paneOf(r), getLang()); }
+      else { revOpen.delete(revKey(r)); if (tvRev && tvRev.r && tvRev.sec === sec && tvRev.r.id === r.id && !!tvRev.r.lms === !!r.lms) tvSheet(sec, null); }
     });
     d.querySelectorAll("[data-revpane]").forEach(b => b.onclick = () => {
-      const pane = b.dataset.revpane; revOpen.set(id, pane); stopSpeak(); tvSheet(sec, r, pane, getLang());
-      d.querySelectorAll("[data-revpane]").forEach(x => x.setAttribute("aria-pressed", x === b));
-      d.querySelector(".rev-pane").innerHTML = revPaneHtml(r, pane, getLang());
-      cardEst(d);
+      stopSpeak(); setPane(d, r, b.dataset.revpane); tvSheet(sec, r, b.dataset.revpane, getLang()); cardEst(d);
     });
     d.querySelectorAll("[data-revspeak]").forEach(b => b.onclick = e => {
       e.preventDefault();
-      const l = b.dataset.revspeak, pane = revOpen.get(id) || "sum", k = `rev:${id}:${pane}:${l}`;
+      const l = b.dataset.revspeak, pane = paneOf(r), k = `${revKey(r)}:${pane}:${l}`;
       if (tv && tv.ok) { tvSheet(sec, r, pane, l); tvSpeak("sheet"); return; }   // télé connectée : lecture sur la télé
       if (speakingId === k) { stopSpeak(); return; }
       stopSpeak();
-      // Lecture dans l'autre langue (Listen alors que le site est en français) : on affiche le texte lu le temps
-      // de la lecture, pour pouvoir le suivre, puis on remet la langue du site.
-      const box = d.querySelector(".rev-pane"), shown = getLang();
+      // Lecture dans l'autre langue : le texte lu est affiché le temps de la lecture, puis on remet la langue du site.
       let restore = null;
-      if (l !== shown) {
-        box.innerHTML = revPaneHtml(r, pane, l); box.lang = l;
-        restore = () => { if (box.isConnected && (revOpen.get(id) || "sum") === pane) { box.innerHTML = revPaneHtml(r, pane, getLang()); box.removeAttribute("lang"); } };
-      }
-      const parts = [...revIntro(d, r, pane, l), ...[...box.querySelectorAll("h4, p, li")].map(el => ({ el }))];
-      speakUnits(k, speechUnits(parts, l), l, b, restore);
+      if (l !== getLang()) { setPane(d, r, pane, l); restore = () => { if (d.isConnected && paneOf(r) === pane) setPane(d, r, pane); }; }
+      speakUnits(k, speechUnits([...revIntro(d, r, pane, l), ...boxParts(d)], l), l, b, restore);
     });
+  });
+  // « Lire tout le domaine » : chaque fiche du domaine est ouverte sur « Tout », puis tout est lu à la suite (avec surlignage).
+  app.querySelectorAll("[data-domspeak]").forEach(b => b.onclick = e => {
+    e.preventDefault();
+    const sect = b.closest("[data-revdom]"), dom = +sect.dataset.revdom, l = b.dataset.domspeak, k = `revision:D${dom}:${l}`;
+    const cards = [...sect.querySelectorAll(".rev-card")], parts = [];
+    // télé connectée : tout le domaine est lu sur la télé seulement (rien sur le téléphone)
+    if (tv && tv.ok) { stopSpeak(); tvDomain(sec, dom, cards.map(itemOf), l); tvSpeak("sheet"); return; }
+    if (speakingId === k) { stopSpeak(); return; }
+    stopSpeak();
+    for (const d of cards) {
+      const r = itemOf(d);
+      d.open = true; setPane(d, r, "all", l);
+      parts.push(...revIntro(d, r, "all", l), ...boxParts(d));
+    }
+    const restore = l !== getLang() ? () => cards.forEach(d => { if (d.isConnected) setPane(d, itemOf(d), "all"); }) : null;
+    speakUnits(k, speechUnits(parts, l), l, b, restore);
   });
   const all = open => () => app.querySelectorAll(".rev-card").forEach(d => { d.open = open; });
   document.getElementById("rev-open-all").onclick = all(true);
@@ -2054,10 +2218,172 @@ function renderRevision() {
   mountOffline();
 }
 
+/* ---- Onglet « Rechercher » : retrouver des questions par identifiant (BK_0123, CL_20045, plusieurs à la fois),
+   par mots (anglais et français : question, propositions, explication, mise en situation) ou par chapitre (CH_07, PT_D3…),
+   filtrer par banque / domaine / statut, cocher une ou plusieurs questions et y répondre (quiz avec correction). */
+const srch = { q: "", src: "", dom: "", st: "", sel: new Set(), limit: 60, mix: false };
+const normTxt = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const srchHay = new Map();
+function hayOf(q) {
+  let h = srchHay.get(q.id);
+  if (!h) {
+    h = normTxt([qRef(q), chLabel(q.chapter_id), q.scenario, q.question, ...(q.options || []), q.explanation,
+      q.scenario_fr, q.question_fr, ...(q.options_fr || []), q.explanation_fr].filter(Boolean).join(" \n "));
+    srchHay.set(q.id, h);
+  }
+  return h;
+}
+const REF_RE = /^(bk|cl)[_\-\s]?(\d{1,5})$/;
+function searchResults() {
+  const raw = normTxt(srch.q).trim();
+  // identifiants : « BK_0012 », « bk12 », « CL-20001 » ; plusieurs séparés par des virgules / espaces = l'un OU l'autre
+  const toks = raw.split(/[\s,;]+/).filter(Boolean);
+  const refs = toks.length && toks.every(x => REF_RE.test(x)) ? toks.map(x => { const m = x.match(REF_RE); return [m[1].toUpperCase(), m[2]]; }) : null;
+  const words = refs ? [] : (raw.match(/"[^"]+"|\S+/g) || []).map(w => w.replace(/"/g, "")).filter(Boolean);
+  const latestOk = q => { const a = state.latest.get(q.id); return a ? a.is_correct : null; };
+  return state.questions.filter(q => {
+    if (srch.src === "BK" || srch.src === "CL") { if (qSrc(q) !== srch.src) return false; }
+    else if (srch.src && secOf(q.chapter_id) !== srch.src) return false;
+    if (srch.dom) { const c = chById(q.chapter_id); if (!c || String(c.domain) !== srch.dom) return false; }
+    if (srch.st === "new" && state.latest.has(q.id)) return false;
+    if (srch.st === "ko" && latestOk(q) !== false) return false;
+    if (srch.st === "ok" && latestOk(q) !== true) return false;
+    if (srch.st === "flag" && !isFlagged(q)) return false;
+    if (refs) {
+      const r = qRef(q);
+      return refs.some(([p, d]) => r.startsWith(p + "_") && +r.slice(3) === +d);
+    }
+    const h = hayOf(q);
+    return words.every(w => h.includes(w));
+  });
+}
+function renderSearch() {
+  stopTimer();
+  state.view = "home";
+  const fr = getLang() === "fr";
+  const L = (a, b) => (fr ? a : b);
+  const srcs = ["ccsp-guide", "ccsp-practice"].filter(hasSection);
+  const SRC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice" };
+  const opt = (v, txt, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(txt)}</option>`;
+  app.innerHTML = `
+  <div id="offline-slot"></div>
+  <section class="hero">
+    <h1>${L("Rechercher des questions", "Search questions")}</h1>
+    ${secTabs("search")}
+    <p class="muted">${esc(L(
+      "Chaque question a un identifiant unique BK_xxxx (3001-3200 : Study Guide, 4001-5040 : Practice Tests). Cherche par identifiant (plusieurs séparés par des virgules), par mots (anglais ou français) ou par chapitre (CCSP CH_07, CCSP PT_D3…), coche les questions puis réponds-y.",
+      "Every question has a unique ID BK_xxxx (3001-3200: Study Guide, 4001-5040: Practice Tests). Search by ID (several separated by commas), by words (English or French) or by chapter (CCSP CH_07, CCSP PT_D3…), tick the questions, then answer them."))}</p>
+  </section>
+  <section class="panel srch-panel">
+    <div class="srch-bar">
+      <input type="search" id="srch-q" class="srch-input" value="${esc(srch.q)}" autocomplete="off" spellcheck="false"
+        placeholder="${esc(L("BK_3042, BK_4117 ou mots-clés : CASB, « crypto-shredding »…", "BK_3042, BK_4117 or keywords: CASB, \"crypto-shredding\"…"))}" aria-label="${esc(L("Rechercher", "Search"))}">
+    </div>
+    <div class="srch-filters">
+      <select id="srch-src" aria-label="${esc(L("Banque", "Bank"))}">
+        ${opt("", L("Toutes les banques", "All banks"), srch.src)}
+        ${srcs.map(k => opt(k, SRC_NAMES[k], srch.src)).join("")}
+      </select>
+      <select id="srch-dom" aria-label="${esc(L("Domaine", "Domain"))}">
+        ${opt("", L("Tous les domaines", "All domains"), srch.dom)}
+        ${CCSP_DOMS.map(d => opt(String(d), `D${d} · ${domainName(d, "ccsp")}`, srch.dom)).join("")}
+      </select>
+      <select id="srch-st" aria-label="${esc(L("Statut", "Status"))}">
+        ${opt("", L("Tous les statuts", "Any status"), srch.st)}
+        ${opt("new", L("Jamais répondues", "Never answered"), srch.st)}
+        ${opt("ko", L("Dernière réponse fausse", "Last answer wrong"), srch.st)}
+        ${opt("ok", L("Dernière réponse juste", "Last answer right"), srch.st)}
+        ${opt("flag", L("Marquées 🔖", "Marked 🔖"), srch.st)}
+      </select>
+    </div>
+    <div class="srch-selbar" id="srch-selbar"></div>
+  </section>
+  <section id="srch-res"></section>`;
+  app.querySelectorAll("[data-section]").forEach(b => b.onclick = () => setSection(b.dataset.section));
+  const inp = document.getElementById("srch-q");
+  let deb = null;
+  inp.oninput = () => { clearTimeout(deb); deb = setTimeout(() => { srch.q = inp.value; srch.limit = 60; paintSearch(); }, 180); };
+  inp.onkeydown = e => { if (e.key === "Enter") { clearTimeout(deb); srch.q = inp.value; srch.limit = 60; paintSearch(); inp.blur(); } };
+  [["srch-src", "src"], ["srch-dom", "dom"], ["srch-st", "st"]].forEach(([id, k]) => {
+    document.getElementById(id).onchange = e => { srch[k] = e.target.value; srch.limit = 60; paintSearch(); };
+  });
+  paintSearch();
+  mountOffline();
+}
+function startSearchQuiz(qs) {
+  if (!qs.length) return;
+  const ids = qs.map(q => q.id);
+  // lab sérialisable (reprise) ; « s » distingue deux sélections différentes pour la sauvegarde automatique
+  let hsh = 0; for (const id of ids) hsh = (hsh * 31 + id) % 1000000007;
+  startQuiz({ mode: "mistakes", chapter_id: null, lab: { k: "search", n: qs.length, r: qs.length === 1 ? qRef(qs[0]) : undefined, s: hsh },
+    questions: srch.mix ? shuffle(qs) : qs, feedback: true });
+}
+function paintSearch() {
+  const fr = getLang() === "fr";
+  const L = (a, b) => (fr ? a : b);
+  const res = searchResults();
+  const box = document.getElementById("srch-res"), bar = document.getElementById("srch-selbar");
+  if (!box || !bar) return;
+  const byId = new Map(state.questions.map(q => [q.id, q]));
+  for (const id of [...srch.sel]) if (!byId.has(id)) srch.sel.delete(id);
+  const nSel = srch.sel.size;
+  const allIn = res.length > 0 && res.every(q => srch.sel.has(q.id));
+  bar.innerHTML = `
+    <span class="mono small"><b>${res.length}</b> ${L(res.length > 1 ? "résultats" : "résultat", res.length > 1 ? "results" : "result")}
+      · ${L("sélection", "selected")} <b>${nSel}</b></span>
+    <div class="row">
+      <button class="btn btn-ghost btn-sm" id="srch-all" ${res.length ? "" : "disabled"}>${esc(allIn ? L("Décocher les résultats", "Untick results") : L(`Tout cocher (${res.length})`, `Tick all (${res.length})`))}</button>
+      ${nSel ? `<button class="btn btn-ghost btn-sm" id="srch-clear">${esc(L("Vider la sélection", "Clear selection"))}</button>` : ""}
+      <label class="small srch-mix"><input type="checkbox" id="srch-mix" ${srch.mix ? "checked" : ""}> ${esc(L("Mélanger", "Shuffle"))}</label>
+      <button class="btn btn-primary btn-sm" id="srch-go" ${nSel ? "" : "disabled"}>▶ ${esc(L(`Répondre à la sélection (${nSel})`, `Answer selection (${nSel})`))}</button>
+    </div>`;
+  const shown = res.slice(0, srch.limit);
+  const lang = getLang();
+  box.innerHTML = res.length ? `<div class="srch-list">${shown.map(q => {
+    const tx = qText(q, lang), a = state.latest.get(q.id);
+    const st = a ? (a.is_correct ? `<span class="srch-st ok mono" title="${esc(L("Dernière réponse juste", "Last answer right"))}">✓</span>` : `<span class="srch-st ko mono" title="${esc(L("Dernière réponse fausse", "Last answer wrong"))}">✗</span>`) : "";
+    const qt = String(tx.question || "");
+    return `<div class="srch-item${srch.sel.has(q.id) ? " on" : ""}" data-sq="${q.id}">
+      <label class="srch-check"><input type="checkbox" data-sel="${q.id}" ${srch.sel.has(q.id) ? "checked" : ""} aria-label="${esc(L("Sélectionner", "Select") + " " + qRef(q))}"></label>
+      <div class="srch-body" data-open="${q.id}">
+        <p class="srch-meta">${refTag(q)} <span class="mono muted small">${esc(chLabel(q.chapter_id))} #${q.number}</span> ${st}${isFlagged(q) ? " 🔖" : ""}
+          <button class="btn btn-ghost btn-xs srch-answer" data-answer="${q.id}" title="${esc(L("Répondre à cette question", "Answer this question"))}">▶ ${esc(L("Répondre", "Answer"))}</button></p>
+        <p class="srch-text" lang="${tx.lang}">${esc(qt.slice(0, 220))}${qt.length > 220 ? "…" : ""}</p>
+      </div>
+    </div>`;
+  }).join("")}</div>
+  ${res.length > shown.length ? `<div class="row center"><button class="btn btn-ghost" id="srch-more">${esc(L(`Afficher plus (${res.length - shown.length} restantes)`, `Show more (${res.length - shown.length} left)`))}</button></div>` : ""}`
+    : `<section class="panel"><p class="muted">${esc(L("Aucune question ne correspond.", "No matching question."))}</p></section>`;
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on("srch-all", () => { if (allIn) res.forEach(q => srch.sel.delete(q.id)); else res.forEach(q => srch.sel.add(q.id)); paintSearch(); });
+  on("srch-clear", () => { srch.sel.clear(); paintSearch(); });
+  on("srch-more", () => { srch.limit += 100; paintSearch(); });
+  on("srch-go", () => {
+    // ordre de la recherche pour les questions visibles, puis le reste de la sélection
+    const order = new Map(state.questions.map((q, k) => [q.id, k]));
+    startSearchQuiz([...srch.sel].map(id => byId.get(id)).filter(Boolean).sort((a, b) => order.get(a.id) - order.get(b.id)));
+  });
+  const mix = document.getElementById("srch-mix"); if (mix) mix.onchange = () => { srch.mix = mix.checked; };
+  box.querySelectorAll("[data-sel]").forEach(c => c.onchange = () => {
+    const id = +c.dataset.sel; if (c.checked) srch.sel.add(id); else srch.sel.delete(id);
+    c.closest(".srch-item").classList.toggle("on", c.checked);
+    paintSearchBar();
+  });
+  box.querySelectorAll("[data-open]").forEach(b => b.onclick = () => {   // toucher le texte = cocher / décocher
+    const c = box.querySelector(`[data-sel="${b.dataset.open}"]`); if (c) { c.checked = !c.checked; c.onchange(); }
+  });
+  box.querySelectorAll("[data-answer]").forEach(b => b.onclick = e => { e.stopPropagation(); const q = byId.get(+b.dataset.answer); if (q) startSearchQuiz([q]); });
+}
+/** Met à jour seulement la barre de sélection (sans redessiner la liste, pour garder le défilement). */
+function paintSearchBar() {
+  const y = window.scrollY; paintSearch(); window.scrollTo(0, y);
+}
+
 function renderHome() {
   stopTimer();
   state.view = "home";
   if (!hasSection(state.section)) state.section = hasSection(DEF_SEC) ? DEF_SEC : "ccsp-practice";
+  if (state.section === "search") { renderSearch(); return; }
   if (state.section === "improve") { renderImprove(); return; }
   if (state.section === "revision") { renderRevision(); return; }
   const sec = state.section, cert = certOf(sec), CERT = cert.toUpperCase();
@@ -2142,6 +2468,7 @@ function renderHome() {
         </select>
         <button class="btn btn-primary" id="btn-exam">${esc(t("home.start"))}</button>
       </div>
+      <label class="esl-opt small"><input type="checkbox" id="esl-x2" ${eslOn() ? "checked" : ""}> ${esc(t("home.esl"))}</label>
     </div>
     <div class="action">
       <h3 class="mono">${esc(t("home.mistakes"))}</h3>
@@ -2165,7 +2492,10 @@ function renderHome() {
 
   app.querySelectorAll("[data-section]").forEach(b => b.onclick = () => setSection(b.dataset.section));
   app.querySelectorAll("[data-cert]").forEach(b => b.onclick = () => setCert(b.dataset.cert));
-  const secPerQ = cert === "ccsp" ? 96 : 72;   // CCSP : 150 questions en 4 h ; CISSP : 72 s par question
+  // CCSP : 150 questions en 4 h (96 s par question) ; option ESL (anglais langue étrangère) = temps doublé.
+  const secPerQ = (cert === "ccsp" ? 96 : 72) * (eslOn() ? 2 : 1);
+  const esl = document.getElementById("esl-x2");
+  if (esl) esl.onchange = () => { try { localStorage.setItem(ESL_KEY, esl.checked ? "1" : ""); } catch { /* ignore */ } renderHome(); };
   app.querySelectorAll("[data-exam-chapter]").forEach(b => b.onclick = () => {
     const id = +b.dataset.examChapter;
     const qs = state.questions.filter(q => q.chapter_id === id);
@@ -2217,6 +2547,7 @@ function labelOf(lab) {
     case "mistakes": return t("mode.mistakes");
     case "flagged": return t("mode.flagged");
     case "errorsOf": return t("mode.errorsOf", { label: labelOf(lab.of) });
+    case "search": return (getLang() === "fr" ? "Sélection" : "Selection") + (lab.n === 1 && lab.r ? ` · ${lab.r}` : ` · ${lab.n} Q`);
     default: return "";
   }
 }
@@ -2369,7 +2700,7 @@ function renderQuiz() {
       <div>
         <p class="mono kicker">${esc(z.label())}</p>
         <p class="mono q-count">Q ${pad(z.i + 1)}<span class="muted">/${pad(z.questions.length)}</span>
-          <span class="muted"> · ${chLabel(q.chapter_id)} #${q.number}</span></p>
+          <span class="muted"> · ${chLabel(q.chapter_id)} #${q.number}</span> ${refTag(q)}</p>
       </div>
       <div class="quiz-head-right">
         ${speedActive(z) ? `<span id="speed-clock" class="speed-clock mono" aria-live="off"></span>` : ""}
@@ -2501,7 +2832,7 @@ function renderResults() {
     const txt = qText(d.q);
     return `
     <details class="review ${d.ok ? "ok" : "ko"}" ${d.ok ? "" : "open"} lang="${txt.lang}">
-      <summary><span class="mono">${d.ok ? "✓" : "✗"} ${pad(k + 1)}</span> <span class="muted mono">${chLabel(d.q.chapter_id)}#${d.q.number}</span> ${esc(txt.question.slice(0, 110))}${txt.question.length > 110 ? "…" : ""}</summary>
+      <summary><span class="mono">${d.ok ? "✓" : "✗"} ${pad(k + 1)}</span> <span class="muted mono">${chLabel(d.q.chapter_id)}#${d.q.number}</span> ${refTag(d.q)} ${esc(txt.question.slice(0, 110))}${txt.question.length > 110 ? "…" : ""}</summary>
       ${txt.scenario ? `<p class="muted small" data-tts="scenario">${esc(txt.scenario)}</p>` : ""}
       <p class="q-text-sm" data-tts="q">${esc(txt.question)}</p>
       <ol class="opts opts-sm">${txt.options.map((o, i) => {
