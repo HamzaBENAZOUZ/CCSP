@@ -1,7 +1,7 @@
 {
- "versionCode": 46,
- "versionName": "3.25",
+ "versionCode": 47,
+ "versionName": "3.26",
  "apk": "ccsp-training.apk",
- "notes_fr": "Temps de lecture estimé affiché devant chaque bouton « Lire » des fiches ; il suit la vitesse de lecture choisie.",
- "notes": "Estimated reading time shown before each sheet's \"Listen\" button; it follows the chosen reading speed."
+ "notes_fr": "L'écran ne s'éteint plus pendant la lecture à voix haute (y compris entre deux phrases ou deux questions) ; il reste allumé 1 minute après la fin.",
+ "notes": "The screen no longer turns off during read-aloud (including between sentences or questions); it stays on for 1 minute after reading ends."
 }
