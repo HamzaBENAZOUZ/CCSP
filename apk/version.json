@@ -1,7 +1,7 @@
 {
- "versionCode": 49,
- "versionName": "3.28",
+ "versionCode": 50,
+ "versionName": "3.29",
  "apk": "ccsp-training.apk",
- "notes_fr": "Alignement sur la CISSP : Révision par domaine avec « Lire tout le domaine », Livre et « Tout le chapitre » dans chaque fiche, identifiants BK_ et onglet Rechercher, option ESL, télé et voiture améliorées (quiz par domaine, réponse A-D et à la voix, repli voix Google), Livre disponible hors ligne.",
- "notes": "Aligned with the CISSP app: Review by domain with \"Listen to whole domain\", Book and \"Whole chapter\" in each sheet, BK_ question IDs and Search tab, ESL option, TV and car improvements (quizzes by domain, A-D and voice answers, Google voice fallback), Book available offline."
+ "notes_fr": "Résumés de chapitre beaucoup plus complets, version audio des 10 chapitres, Lire tout le domaine",
+ "notes": "Much longer chapter summaries, audio version of all 10 chapters, Read whole domain"
 }
