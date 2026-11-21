@@ -1,7 +1,7 @@
 {
- "versionCode": 50,
- "versionName": "3.29",
+ "versionCode": 51,
+ "versionName": "3.30",
  "apk": "ccsp-training.apk",
- "notes_fr": "Résumés de chapitre beaucoup plus complets, version audio des 10 chapitres, Lire tout le domaine",
- "notes": "Much longer chapter summaries, audio version of all 10 chapters, Read whole domain"
+ "notes_fr": "Nouvel onglet Examen blanc ISC2 : 300 questions originales style examen (50 par domaine), examen chronométré par domaine, option ESL.",
+ "notes": "New ISC2 Mock Exam tab: 300 original exam-style questions (50 per domain), timed exam per domain, ESL option."
 }

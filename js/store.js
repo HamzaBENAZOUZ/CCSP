@@ -7,6 +7,7 @@ const DOMAIN_OF = {1:1,2:1,3:1,4:1,5:2,6:3,7:3,8:3,9:3,10:3,11:4,12:4,13:5,14:5,
   // CCSP : Study Guide 3e éd. (201-210) et Official Practice Tests 3e éd. (301-306 = domaines 1-6, 307-308 = tests complets)
   201:1,202:2,203:2,204:3,205:3,206:4,207:5,208:5,209:6,210:6,
   301:1,302:2,303:3,304:4,305:5,306:6,
+  391:1,392:2,393:3,394:4,395:5,396:6,   // examen blanc ISC2 CCSP (questions originales)
   // « CISSP: The Last Mile » : QCM originaux, 401-408 = domaines 1-8
   401:1,402:2,403:3,404:4,405:5,406:6,407:7,408:8};
 
@@ -434,7 +435,7 @@ export class LocalStore {
     const raw = await res.json();
     // Section « Practice Tests » : fichier facultatif à côté de questions.json
     // Sections facultatives (Practice Tests CISSP, puis banques CCSP), à côté de questions.json
-    for (const f of ["ccsp_practice.json"]) {
+    for (const f of ["ccsp_practice.json", "isc2.json"]) {
       try {
         const r2 = await fetch(this.dataUrl.replace(/[^/]+$/, f), { cache: "no-store" });
         if (r2.ok) raw.push(...await r2.json());

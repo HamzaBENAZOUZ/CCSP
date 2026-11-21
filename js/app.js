@@ -13,7 +13,7 @@ const PASS = CFG.PASS_MARK || 70;
 const DOMAIN_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
 /* Site CCSP : banques Study Guide (chapitres 201-210) et Practice Tests (301-308), dans la même base
    Supabase que le site CISSP. Les chapitres CISSP (1-112, 401-408) ne sont pas chargés. */
-const SECTIONS = ["ccsp-guide", "ccsp-practice", "revision", "improve", "search"];
+const SECTIONS = ["ccsp-guide", "ccsp-practice", "ccsp-isc2", "revision", "improve", "search"];
 const DEF_SEC = "ccsp-guide";
 const CCSP_DOMS = [1, 2, 3, 4, 5, 6];
 /** Chapitres de ce site. */
@@ -831,7 +831,7 @@ function tvBusy(n) {
 // ---- Sections : « guide » = Study Guide CISSP (chapitres 1-21), « practice » = Official Practice Tests CISSP (101-112),
 // « ccsp-guide » = Study Guide CCSP (201-210), « ccsp-practice » = Official Practice Tests CCSP (301-308).
 // « lastmile » = QCM originaux rédigés d'après « CISSP: The Last Mile » (401-408 = domaines 1-8).
-const secOf = chId => (chId > 400 ? "lastmile" : chId > 300 ? "ccsp-practice" : chId > 200 ? "ccsp-guide" : chId > 100 ? "practice" : "guide");
+const secOf = chId => (chId > 400 ? "lastmile" : chId > 390 ? "ccsp-isc2" : chId > 300 ? "ccsp-practice" : chId > 200 ? "ccsp-guide" : chId > 100 ? "practice" : "guide");
 const certOf = sec => (String(sec).startsWith("ccsp") ? "ccsp" : "cissp");
 const secCert = () => certOf(state.section);
 const secChapters = () => state.chapters.filter(c => secOf(c.id) === state.section);
@@ -844,6 +844,7 @@ const domainName = (d, cert = secCert()) => t((cert === "ccsp" ? "ccspDomain." :
 /** Étiquette courte d'un chapitre : CH_07, PT_D3 (practice, domaine 3), TEST_2 (test complet) ; préfixe CCSP pour le CCSP. */
 function chLabel(id) {
   if (id > 400) return `LM_D${id - 400}`;
+  if (id > 390) return `ISC2_D${id - 390}`;
   if (id > 200) {
     const c = chById(id), base = id > 300 ? 300 : 200;
     if (id < 300) return `CCSP CH_${pad(id - base)}`;
@@ -857,18 +858,20 @@ function chLabel(id) {
  *  sur le site, dans l'APK, hors ligne et dans toutes les copies de la base.
  *  BK_xxxx = question issue d'un livre : 0001-0420 Study Guide (CH_01-21), 1001-2560 Official Practice Tests (101-112),
  *            3001-3200 CCSP Study Guide (201-210), 4001-5040 CCSP Practice Tests (301-308).
- *  CL_xxxxx = question rédigée par Claude : 1xxxx Last Mile (401-408), 2xxxx Examen blanc ISC2 (501-508). */
+ *  CL_xxxxx = question rédigée par Claude : 1xxxx Last Mile (401-408), 2xxxx Examen blanc ISC2 CISSP (501-508),
+ *             3xxxx Examen blanc ISC2 CCSP (391-396). */
 function qRef(q) {
   const c = q.chapter_id, n = q.number;
   const bk = v => "BK_" + String(v).padStart(4, "0"), cl = v => "CL_" + String(v).padStart(5, "0");
   if (c > 500) return cl(20000 + (c - 501) * 100 + n);
   if (c > 400) return cl(10000 + (c - 401) * 100 + n);
+  if (c > 390) return cl(30000 + (c - 391) * 100 + n);
   if (c > 300) return bk(4000 + (c - 301) * 130 + n);
   if (c > 200) return bk(3000 + (c - 201) * 20 + n);
   if (c > 100) return bk(1000 + (c - 101) * 130 + n);
   return bk((c - 1) * 20 + n);
 }
-const qSrc = q => (q.chapter_id > 400 ? "CL" : "BK");
+const qSrc = q => (q.chapter_id > 390 ? "CL" : "BK");
 const refTag = q => `<span class="qref mono" title="${esc(getLang() === "fr" ? (qSrc(q) === "BK" ? "Identifiant de la question (issue du livre)" : "Identifiant de la question") : (qSrc(q) === "BK" ? "Question ID (from the book)" : "Question ID"))}">${qRef(q)}</span>`;
 function setSection(sec) {
   if (!hasSection(sec)) sec = certOf(sec) === "ccsp" ? (hasSection("ccsp-guide") ? "ccsp-guide" : "ccsp-practice") : DEF_SEC;
@@ -899,7 +902,7 @@ function errorPanel(title, msg, hint) {
 // Numéro de version affiché discrètement à côté du logo (même numéro que l'APK : à changer à chaque version).
 const ESL_KEY = "ccsp-esl";
 const eslOn = () => { try { return localStorage.getItem(ESL_KEY) === "1"; } catch { return false; } };
-const APP_VERSION = "3.29";
+const APP_VERSION = "3.30";
 function renderVersion() {
   if (document.getElementById("app-ver")) return;
   const brand = document.querySelector(".brand"); if (!brand) return;
@@ -1545,7 +1548,7 @@ function autoGroups(lang) {
       groups.push({ folder, title: "D" + d + " · " + t("ccspDomain." + d, {}, lang),
         subtitle: items.length + (fr ? " questions, réponse à l'écran" : " questions, answer on screen"), items });
     });
-    for (const [sec, nf, ne] of [["ccsp-guide", "CCSP Study Guide", "CCSP Study Guide"], ["ccsp-practice", "CCSP Practice", "CCSP Practice"]]) byDomain(own(sec), (fr ? "Quiz · " + nf : "Quiz · " + ne), PER_DOMAIN);
+    for (const [sec, nf, ne] of [["ccsp-guide", "CCSP Study Guide", "CCSP Study Guide"], ["ccsp-practice", "CCSP Practice", "CCSP Practice"], ["ccsp-isc2", "Examen blanc ISC2", "ISC2 Mock Exam"]]) byDomain(own(sec), (fr ? "Quiz · " + nf : "Quiz · " + ne), PER_DOMAIN);
     const wrong = mistakes();
     if (wrong.length) byDomain(wrong, fr ? "Quiz · Mes erreurs" : "Quiz · My mistakes", 60);
     return groups;
@@ -1880,7 +1883,7 @@ function savedPanel() {
  *  (seulement ceux qui ont du contenu). Le chiffre est le nombre de questions (de fiches pour la révision). */
 function secTabs(sec) {
   const nIn = s => s === "search" ? state.questions.length : s === "improve" ? mistakes().length : s === "revision" ? CCSP_DOMS.length : state.questions.filter(q => secOf(q.chapter_id) === s).length;
-  const SEC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice", revision: t("rev.tabAll"), improve: getLang() === "fr" ? "Axes d'amélioration" : "Improvement areas",
+  const SEC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice", "ccsp-isc2": t("isc2.tab"), revision: t("rev.tabAll"), improve: getLang() === "fr" ? "Axes d'amélioration" : "Improvement areas",
     search: getLang() === "fr" ? "🔎 Rechercher" : "🔎 Search" };
   const secs = Object.keys(SEC_NAMES).filter(hasSection);
   return secs.length > 1 ? `
@@ -2262,8 +2265,8 @@ function renderSearch() {
   state.view = "home";
   const fr = getLang() === "fr";
   const L = (a, b) => (fr ? a : b);
-  const srcs = ["ccsp-guide", "ccsp-practice"].filter(hasSection);
-  const SRC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice" };
+  const srcs = ["ccsp-guide", "ccsp-practice", "ccsp-isc2"].filter(hasSection);
+  const SRC_NAMES = { "ccsp-guide": "CCSP Study Guide", "ccsp-practice": "CCSP Practice", "ccsp-isc2": t("isc2.tab") };
   const opt = (v, txt, cur) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(txt)}</option>`;
   app.innerHTML = `
   <div id="offline-slot"></div>
@@ -2271,8 +2274,8 @@ function renderSearch() {
     <h1>${L("Rechercher des questions", "Search questions")}</h1>
     ${secTabs("search")}
     <p class="muted">${esc(L(
-      "Chaque question a un identifiant unique BK_xxxx (3001-3200 : Study Guide, 4001-5040 : Practice Tests). Cherche par identifiant (plusieurs séparés par des virgules), par mots (anglais ou français) ou par chapitre (CCSP CH_07, CCSP PT_D3…), coche les questions puis réponds-y.",
-      "Every question has a unique ID BK_xxxx (3001-3200: Study Guide, 4001-5040: Practice Tests). Search by ID (several separated by commas), by words (English or French) or by chapter (CCSP CH_07, CCSP PT_D3…), tick the questions, then answer them."))}</p>
+      "Chaque question a un identifiant unique : BK_xxxx pour les livres (3001-3200 : Study Guide, 4001-5040 : Practice Tests), CL_3xxxx pour l'examen blanc ISC2. Cherche par identifiant (plusieurs séparés par des virgules), par mots (anglais ou français) ou par chapitre (CCSP CH_07, CCSP PT_D3…), coche les questions puis réponds-y.",
+      "Every question has a unique ID: BK_xxxx for the books (3001-3200: Study Guide, 4001-5040: Practice Tests), CL_3xxxx for the ISC2 mock exam. Search by ID (several separated by commas), by words (English or French) or by chapter (CCSP CH_07, CCSP PT_D3…), tick the questions, then answer them."))}</p>
   </section>
   <section class="panel srch-panel">
     <div class="srch-bar">
@@ -2411,7 +2414,7 @@ function renderHome() {
           <span class="bar"><span style="width:${best ?? 0}%"></span></span>
         </button>
         <div class="ch-actions">
-          ${c.domain ? "" : `<button class="btn btn-ghost btn-xs" data-exam-chapter="${c.id}">${esc(t("home.examMode"))}</button>`}
+          ${c.domain && sec !== "ccsp-isc2" ? "" : `<button class="btn btn-ghost btn-xs" data-exam-chapter="${c.id}">${esc(t("home.examMode"))}</button>`}
           <button class="btn btn-ghost btn-xs" data-start-chapter="${c.id}" data-shuffle="1" title="${esc(t("home.shuffleTitle"))}">${esc(t("home.shuffle"))}</button>
           ${nErr ? `<button class="btn btn-ghost btn-xs" data-mistakes-chapter="${c.id}">${esc(t("home.errors", { n: nErr }))}</button>` : ""}
         </div>
@@ -2439,7 +2442,7 @@ function renderHome() {
       <div class="chapter-grid">${tests.map(card).join("")}</div>
     </section>` : "";
   const tabs = secTabs(sec);
-  const subKey = sec === "lastmile" ? "lm.sub" : cert === "ccsp" ? (kind === "practice" ? "ccsp.subPractice" : "ccsp.sub") : (kind === "practice" ? "home.subPractice" : "home.sub");
+  const subKey = sec === "ccsp-isc2" ? "isc2.sub" : sec === "lastmile" ? "lm.sub" : cert === "ccsp" ? (kind === "practice" ? "ccsp.subPractice" : "ccsp.sub") : (kind === "practice" ? "home.subPractice" : "home.sub");
 
   const sizes = [25, 50, 100, 125, 150];
   app.innerHTML = `
