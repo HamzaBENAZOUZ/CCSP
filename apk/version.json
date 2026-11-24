@@ -1,7 +1,7 @@
 {
- "versionCode": 51,
- "versionName": "3.30",
+ "versionCode": 52,
+ "versionName": "3.31",
  "apk": "ccsp-training.apk",
- "notes_fr": "Nouvel onglet Examen blanc ISC2 : 300 questions originales style examen (50 par domaine), examen chronométré par domaine, option ESL.",
- "notes": "New ISC2 Mock Exam tab: 300 original exam-style questions (50 per domain), timed exam per domain, ESL option."
+ "notes_fr": "Révision : résumé complet du livre Destination CCSP (en français) en tête de chaque domaine, lisible à voix haute, sur la télé et en voiture.",
+ "notes": "Review: complete summary of the Destination CCSP book (in French) at the top of each domain, read aloud, on TV and in the car."
 }

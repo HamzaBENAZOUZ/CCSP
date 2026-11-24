@@ -818,3 +818,7 @@ body { overflow-wrap: break-word; }
 .srch-text { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
 .srch-st.ok { color: var(--green); } .srch-st.ko { color: var(--red); }
 .srch-answer { margin-left: auto; }
+/* Résumé du livre Destination CCSP (carte 📗 en tête de chaque domaine de Révision) */
+.rev-pane h5 { margin: .9rem 0 .35rem; font-size: .95rem; font-weight: 600; opacity: .9; }
+.tv-sheet .rev-pane h5 { font-size: 1.3rem; margin: .9em 0 .3em; }
+.rev-card-lms > summary .ch-num { white-space: nowrap; }
