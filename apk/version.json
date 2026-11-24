@@ -1,7 +1,7 @@
 {
- "versionCode": 52,
- "versionName": "3.31",
+ "versionCode": 53,
+ "versionName": "3.32",
  "apk": "ccsp-training.apk",
- "notes_fr": "Révision : résumé complet du livre Destination CCSP (en français) en tête de chaque domaine, lisible à voix haute, sur la télé et en voiture.",
- "notes": "Review: complete summary of the Destination CCSP book (in French) at the top of each domain, read aloud, on TV and in the car."
+ "notes_fr": "Révision express (environ 1 h 15) en tête de Révision, en français et en anglais : méthode, 6 domaines avec cas pratiques, questions éclair, pièges et résumé d'une minute, puis le dernier quart d'heure. Aussi en voiture et sur la télé.",
+ "notes": "Express review (about 1 h 10) at the top of Review, in English and French: method, 6 domains with worked cases, quick-fire questions, traps and a one-minute recap, then the last quarter of an hour. Also in the car and on TV."
 }

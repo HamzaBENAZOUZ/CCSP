@@ -822,3 +822,7 @@ body { overflow-wrap: break-word; }
 .rev-pane h5 { margin: .9rem 0 .35rem; font-size: .95rem; font-weight: 600; opacity: .9; }
 .tv-sheet .rev-pane h5 { font-size: 1.3rem; margin: .9em 0 .3em; }
 .rev-card-lms > summary .ch-num { white-space: nowrap; }
+/* Révision express (3.32) */
+.domain-xp { border: 1px solid var(--accent, var(--green)); border-radius: 12px; padding: 12px; }
+.domain-xp > .muted { margin: 4px 0 10px; }
+.rev-card-xp { border-left: 3px solid var(--accent, var(--green)); }
